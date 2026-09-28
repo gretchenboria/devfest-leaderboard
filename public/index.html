@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>DevFest Bay Area 2026 | Leaderboard & Judging</title>
+  <link rel="icon" type="image/png" href="/assets/hot-sauce-sticker.png">
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            googleBlue: '#4285F4',
+            googleRed: '#EA4335',
+            googleYellow: '#FBBC04',
+            googleGreen: '#34A853',
+            darkBg: '#0b0f17',
+            darkCard: '#141a26',
+            darkCardInner: '#0e131d',
+            darkBorder: '#1f2937'
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            display: ['"Google Sans"', 'Outfit', 'sans-serif']
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Canvas Confetti -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    .glow-gold {
+      box-shadow: 0 0 25px rgba(251, 188, 4, 0.25);
+    }
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+    /* Stepper button styling */
+    .stepper-btn {
+      touch-action: manipulation;
+    }
+  </style>
+</head>
+<body class="bg-[#f0f0f0] text-[#1e1e1e] min-h-screen font-sans flex flex-col antialiased selection:bg-googleBlue selection:text-white pb-20 md:pb-6">
+
+  <!-- DevFest Color Strip Header -->
+  <div class="h-1.5 w-full bg-gradient-to-r from-googleBlue via-googleRed via-googleYellow to-googleGreen sticky top-0 z-50"></div>
+
+  <!-- Top Header Bar -->
+  <header class="border-b border-gray-200 bg-white/95 backdrop-blur-md sticky top-1.5 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16">
+        
+        <!-- Logo & Title -->
+        <div class="flex items-center space-x-3">
+          <img src="/assets/hot-sauce-sticker.png" alt="DevFest 2026 Hot Sauce" class="h-9 sm:h-11 w-auto object-contain flex-shrink-0">
+          <div class="overflow-hidden">
+            <div class="flex items-center space-x-1.5">
+              <span class="text-[10px] sm:text-xs font-bold px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-600 border border-blue-500/30 whitespace-nowrap">Bay Area 2026</span>
+              <span class="text-[11px] text-gray-600 hidden lg:inline">Circuit Launch • Mountain View</span>
+            </div>
+            <h1 class="text-xs sm:text-sm md:text-base font-bold text-[#1e1e1e] tracking-tight font-display truncate">
+              Build, Secure, Scale <span class="text-gray-600 font-normal hidden sm:inline">| Official Leaderboard & Judging</span>
+            </h1>
+          </div>
+        </div>
+
+        <!-- Desktop Navigation Tabs (Hidden on mobile) -->
+        <nav class="hidden md:flex items-center space-x-2">
+          <button onclick="switchTab('leaderboard')" id="tab-btn-leaderboard" class="nav-tab px-3.5 py-2 rounded-xl text-sm font-semibold transition flex items-center space-x-2 bg-googleBlue text-white shadow-md shadow-blue-500/20">
+            <i data-lucide="trophy" class="w-4 h-4"></i>
+            <span>Leaderboard</span>
+          </button>
+          
+          <button onclick="switchTab('judge')" id="tab-btn-judge" class="nav-tab px-3.5 py-2 rounded-xl text-sm font-medium transition flex items-center space-x-2 text-gray-600 hover:text-[#1e1e1e] hover:bg-gray-100/60">
+            <i data-lucide="award" class="w-4 h-4"></i>
+            <span>Judge Portal</span>
+          </button>
+
+          <button onclick="switchTab('rubric')" id="tab-btn-rubric" class="nav-tab px-3.5 py-2 rounded-xl text-sm font-medium transition flex items-center space-x-2 text-gray-600 hover:text-[#1e1e1e] hover:bg-gray-100/60">
+            <i data-lucide="book-open" class="w-4 h-4"></i>
+            <span>Rubric</span>
+          </button>
+
+          <button onclick="switchTab('sync')" id="tab-btn-sync" class="nav-tab px-3.5 py-2 rounded-xl text-sm font-medium transition flex items-center space-x-2 text-gray-600 hover:text-[#1e1e1e] hover:bg-gray-100/60">
+            <i data-lucide="cloud" class="w-4 h-4"></i>
+            <span>Storage & Sync</span>
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          </button>
+
+          <!-- Projector View Toggle -->
+          <button onclick="toggleProjectorMode()" title="Stage Projector Mode" class="p-2 text-gray-600 hover:text-[#1e1e1e] hover:bg-gray-100 rounded-xl transition ml-1">
+            <i data-lucide="tv" class="w-4 h-4"></i>
+          </button>
+        </nav>
+
+        <!-- Mobile Header Quick Actions -->
+        <div class="flex items-center space-x-2 md:hidden">
+          <button onclick="manualRefresh()" aria-label="Refresh Data" title="Refresh" class="p-2 rounded-xl bg-gray-100 text-gray-700 active:scale-95 transition">
+            <i data-lucide="refresh-cw" id="mobile-refresh-icon" class="w-4 h-4"></i>
+          </button>
+          <button onclick="toggleProjectorMode()" aria-label="Toggle Projector Mode" title="Projector Mode" class="p-2 rounded-xl bg-gray-100 text-gray-700 active:scale-95 transition">
+            <i data-lucide="tv" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+      </div>
+    </div>
+  </header>
+
+  <!-- Live Status Bar (Compact for Mobile) -->
+  <div class="bg-white border-b border-gray-200/80 px-4 py-1.5 text-[11px] sm:text-xs">
+    <div class="max-w-7xl mx-auto flex items-center justify-between gap-2">
+      <div class="flex items-center space-x-2 text-gray-600 truncate">
+        <span class="inline-flex items-center gap-1.5 text-emerald-600 font-medium whitespace-nowrap">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+          Live Synced
+        </span>
+        <span class="text-gray-500">•</span>
+        <span id="last-sync-badge" class="truncate">Source: Google Sheets</span>
+        <span class="text-gray-500 hidden sm:inline">•</span>
+        
+      </div>
+      <div class="flex items-center space-x-2 flex-shrink-0">
+        <a href="https://docs.google.com/spreadsheets/d/1-YAJhGgrphQhwlUmQcjNVDHK2uRc7jV-2XPA69z8u3E/edit?gid=2026781436" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-700 flex items-center gap-1">
+          <span>Sheet</span>
+          <i data-lucide="external-link" class="w-3 h-3"></i>
+        </a>
+        <span class="text-gray-500">•</span>
+        <a href="https://gdg.community.dev/events/details/google-gdg-sunnyvale-presents-devfest-bay-area-2026/cohost-gdg-sunnyvale" target="_blank" rel="noopener noreferrer" class="text-amber-600 hover:text-amber-700 flex items-center gap-1">
+          <span>Event</span>
+          <i data-lucide="external-link" class="w-3 h-3"></i>
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Content Container -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
+
+    <!-- ==================== TAB 1: LEADERBOARD ==================== -->
+    <section id="view-leaderboard" class="space-y-4 sm:space-y-6">
+      
+      <!-- Track Filter & Search Controls (Mobile Horizontal Scroll) -->
+      <div class="bg-white p-3 sm:p-4 rounded-2xl border border-gray-200 space-y-3">
+        
+        <!-- Track Filter Pills (Touch friendly, horizontal scrollable) -->
+        <div class="flex items-center space-x-2 overflow-x-auto no-scrollbar py-0.5">
+          <button onclick="setTrackFilter('all')" id="filter-all" class="track-pill px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition bg-googleBlue text-white whitespace-nowrap shadow-sm shadow-blue-500/20">
+            🏆 All Tracks (<span id="count-all">0</span>)
+          </button>
+          <button onclick="setTrackFilter('developer')" id="filter-dev" class="track-pill px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition text-gray-700 hover:bg-gray-100 whitespace-nowrap">
+            ⚡ Developer Track (<span id="count-dev">0</span>)
+          </button>
+          <button onclick="setTrackFilter('builder')" id="filter-builder" class="track-pill px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition text-gray-700 hover:bg-gray-100 whitespace-nowrap">
+            🎨 Builder Track (<span id="count-builder">0</span>)
+          </button>
+        </div>
+
+        <!-- Search Bar -->
+        <div class="flex items-center space-x-2">
+          <div class="relative flex-1">
+            <i data-lucide="search" class="w-4 h-4 text-gray-600 absolute left-3 top-2.5"></i>
+            <input type="text" id="search-teams" oninput="renderLeaderboard()" placeholder="Search teams..." class="w-full bg-gray-50 border border-gray-300/80 rounded-xl pl-9 pr-3 py-2 text-xs sm:text-sm text-gray-800 focus:outline-none focus:border-googleBlue transition">
+          </div>
+          <button onclick="manualRefresh()" title="Refresh Leaderboard" class="hidden sm:flex p-2 px-3 rounded-xl bg-gray-100 hover:bg-gray-300 text-gray-700 transition items-center gap-1.5 text-xs font-medium">
+            <i data-lucide="refresh-cw" id="refresh-icon" class="w-4 h-4"></i>
+            <span>Refresh</span>
+          </button>
+        </div>
+
+      </div>
+
+      <!-- Top 3 Podium (Responsive Layout: 1st on top on mobile, 2-1-3 on desktop) -->
+      <div>
+        <div class="flex items-center justify-between px-1 mb-2">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-gray-600">Podium Leaders</h3>
+          <span class="text-xs text-googleBlue font-medium">DevFest 2026</span>
+        </div>
+        <div id="podium-container" class="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
+          <!-- Rendered dynamically -->
+        </div>
+      </div>
+
+      <!-- Standings Header -->
+      <div class="flex items-center justify-between px-1 pt-2">
+        <div>
+          <h2 class="text-base sm:text-lg font-bold text-[#1e1e1e] flex items-center gap-2">
+            <i data-lucide="list-ordered" class="w-5 h-5 text-googleBlue"></i>
+            Official Standings
+          </h2>
+          <p class="text-xs text-gray-600">Tap any team to view judge scores and notes</p>
+        </div>
+        <span id="teams-count-badge" class="px-2.5 py-1 bg-gray-100 rounded-full text-xs font-semibold text-gray-700">0 Teams Graded</span>
+      </div>
+
+      <!-- Mobile Native Card View (Shown on < 768px) -->
+      <div id="mobile-cards-container" class="md:hidden space-y-3">
+        <!-- Dynamically rendered mobile cards -->
+      </div>
+
+      <!-- Desktop Table View (Shown on >= 768px) -->
+      <div class="hidden md:block bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="bg-gray-100 text-gray-600 text-xs uppercase tracking-wider font-semibold border-b border-gray-200">
+                <th class="py-3.5 px-6">Rank</th>
+                <th class="py-3.5 px-6">Team Name</th>
+                <th class="py-3.5 px-6">Track</th>
+                <th class="py-3.5 px-6">Judges</th>
+                <th class="py-3.5 px-6">Avg Score (/50)</th>
+                <th class="py-3.5 px-6 text-right">Details</th>
+              </tr>
+            </thead>
+            <tbody id="leaderboard-table-body" class="divide-y divide-gray-800 text-sm">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Empty State -->
+      <div id="empty-state" class="hidden py-16 text-center text-gray-600 bg-white rounded-2xl border border-gray-200">
+        <i data-lucide="inbox" class="w-12 h-12 mx-auto mb-3 text-gray-500"></i>
+        <p class="text-base font-semibold">No teams found matching search</p>
+        <p class="text-xs text-gray-600 mt-1">Submit scores in the Judge Portal or sync with Google Sheets.</p>
+      </div>
+
+    </section>
+
+    <!-- ==================== TAB 2: JUDGE PORTAL ==================== -->
+    <section id="view-judge" class="hidden space-y-4 sm:space-y-6">
+      
+      <div class="max-w-3xl mx-auto bg-white border border-gray-200 rounded-3xl p-4 sm:p-8 shadow-md">
+        
+        <div class="border-b border-gray-200 pb-4 mb-5">
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-googleBlue/20 text-googleBlue border border-googleBlue/30">
+              DevFest Official Rubric
+            </span>
+            <span class="text-xs text-gray-600">Scale: <strong class="text-[#1e1e1e]">50 pts max</strong></span>
+          </div>
+          <h2 class="text-xl sm:text-2xl font-extrabold text-[#1e1e1e] mt-2 font-display">Judge Scoring Portal</h2>
+          <p class="text-xs sm:text-sm text-gray-600 mt-1">Tap [+] or [-] or drag sliders to evaluate. Scores sync to persistent memory and Cloud Storage in real-time.</p>
+        </div>
+
+        <form id="judge-form" onsubmit="handleScoreSubmit(event)" class="space-y-5">
+          
+          <!-- Track Selector -->
+          <div>
+            <label class="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">1. Select Track</label>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
+              <label class="cursor-pointer border border-gray-300/80 rounded-2xl p-3.5 flex items-start space-x-3 hover:border-googleBlue transition bg-gray-50 has-[:checked]:border-googleBlue has-[:checked]:bg-blue-50/20">
+                <input type="radio" name="track" value="Developer Track" checked onchange="updateRubricCriteria()" class="mt-1 text-googleBlue focus:ring-googleBlue">
+                <div>
+                  <div class="font-bold text-sm text-[#1e1e1e] flex items-center gap-1.5">
+                    <span class="w-2.5 h-2.5 rounded-full bg-googleBlue"></span>
+                    Developer Track
+                  </div>
+                  <p class="text-[11px] sm:text-xs text-gray-600 mt-0.5">Gemini Dev Challenge: Multi-tier architectures, agentic orchestration, enterprise security & Cloud Run.</p>
+                </div>
+              </label>
+
+              <label class="cursor-pointer border border-gray-300/80 rounded-2xl p-3.5 flex items-start space-x-3 hover:border-googleYellow transition bg-gray-50 has-[:checked]:border-googleYellow has-[:checked]:bg-yellow-50/20">
+                <input type="radio" name="track" value="Builder Track" onchange="updateRubricCriteria()" class="mt-1 text-googleYellow focus:ring-googleYellow">
+                <div>
+                  <div class="font-bold text-sm text-[#1e1e1e] flex items-center gap-1.5">
+                    <span class="w-2.5 h-2.5 rounded-full bg-googleYellow"></span>
+                    Builder Track
+                  </div>
+                  <p class="text-[11px] sm:text-xs text-gray-600 mt-0.5">Vibecoding Lounge: Prompt to production with AI Studio, UI Stitch, and creative prototypes.</p>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <!-- Judge Name & Team Name -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+            <div>
+              <label for="judge-name-input" class="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5">2. Judge / Mentor Name *</label>
+              <input type="text" id="judge-name-input" required placeholder="e.g., Judge Smith" class="w-full bg-gray-50 border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm text-[#1e1e1e] focus:outline-none focus:border-googleBlue transition">
+              <span class="text-[10px] text-gray-600 mt-1 block">Remembered in your browser.</span>
+            </div>
+
+            <div>
+              <label for="team-name-input" class="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5">3. Team Name *</label>
+              <div class="relative">
+                <input type="text" id="team-name-input" required list="existing-teams-list" placeholder="Select or type team name..." class="w-full bg-gray-50 border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm text-[#1e1e1e] focus:outline-none focus:border-googleBlue transition">
+                <datalist id="existing-teams-list">
+                  <!-- Populated from scores -->
+                </datalist>
+              </div>
+              <span class="text-[10px] text-gray-600 mt-1 block">Select existing or enter new team.</span>
+            </div>
+          </div>
+
+          <!-- Dynamic Evaluation Criteria (5 items x 10 pts with Steppers) -->
+          <div class="pt-3 border-t border-gray-200">
+            <div class="flex items-center justify-between mb-3">
+              <label class="block text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                4. Evaluation Criteria (1 - 10 Points)
+              </label>
+              <span class="text-xs font-medium text-emerald-600">Total Live: <strong id="live-total-score" class="text-base text-[#1e1e1e]">45</strong> / 50</span>
+            </div>
+
+            <div id="criteria-container" class="space-y-4">
+              <!-- Dynamically populated with mobile steppers -->
+            </div>
+          </div>
+
+          <!-- Qualitative Feedback / Notes -->
+          <div class="pt-3 border-t border-gray-200">
+            <label for="judge-notes" class="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5">5. Judge Notes & Feedback (Optional)</label>
+            <textarea id="judge-notes" rows="3" placeholder="Key strengths, architectural innovations, suggestions..." class="w-full bg-gray-50 border border-gray-300 rounded-xl p-3 text-xs sm:text-sm text-[#1e1e1e] focus:outline-none focus:border-googleBlue transition"></textarea>
+          </div>
+
+          <!-- Submit Button -->
+          <div class="pt-2">
+            <button type="submit" id="submit-score-btn" class="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-googleBlue via-blue-600 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 active:scale-[0.99] text-white font-bold text-sm tracking-wide shadow-lg shadow-blue-500/30 transition flex items-center justify-center space-x-2">
+              <i data-lucide="check-circle" class="w-5 h-5"></i>
+              <span>Submit Evaluation to Leaderboard</span>
+            </button>
+            <p class="text-center text-[11px] text-gray-600 mt-2">Saved to persistent memory & pushed to Cloud Storage snapshot.</p>
+          </div>
+
+        </form>
+
+      </div>
+
+    </section>
+
+    <!-- ==================== TAB 3: RUBRIC & GUIDE ==================== -->
+    <section id="view-rubric" class="hidden space-y-4 sm:space-y-6">
+      
+      <!-- Event Header Card -->
+      <div class="bg-white border border-gray-200 rounded-3xl p-4 sm:p-8">
+        <div>
+          <span class="text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-googleGreen/20 text-googleGreen border border-googleGreen/30">
+            Official Competition Guide
+          </span>
+          <h2 class="text-xl sm:text-2xl md:text-3xl font-extrabold text-[#1e1e1e] mt-2 font-display">DevFest Bay Area 2026 Judging Rubric</h2>
+          <p class="text-xs sm:text-sm text-gray-700 mt-1 leading-relaxed">
+            Thursday, October 1, 2026 | Circuit Launch, Mountain View, CA.<br>
+            Official guide and scoring band reference for the Gemini Dev Challenge and Vibecoding Lounge.
+          </p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 mt-5">
+          
+          <!-- Dev Track Card -->
+          <div class="border border-blue-200/50 bg-blue-50/20 rounded-2xl p-4 sm:p-5 space-y-2.5">
+            <div class="flex items-center justify-between">
+              <h3 class="font-bold text-blue-600 text-sm sm:text-base">Developer Track (Gemini Dev Challenge)</h3>
+              <span class="text-xs font-semibold px-2 py-0.5 rounded bg-blue-500/20 text-blue-700">50 pts</span>
+            </div>
+            <p class="text-xs text-gray-700"><strong class="text-[#1e1e1e]">Philosophy:</strong> "Build, Secure, Scale" — production-ready multi-tier architectures, agentic orchestration, enterprise security & scalability.</p>
+            <p class="text-xs text-gray-600"><strong class="text-gray-700">Tech Stack:</strong> Google Stitch (UI), Gemini API / Gemma models, Firebase Firestore / Cloud SQL backend, Google Cloud Run.</p>
+            <div class="pt-1">
+              <a href="https://codelabs.developers.google.com/building-ai-apps-google-ecosystem#0" target="_blank" class="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 underline font-medium">
+                <i data-lucide="book" class="w-3.5 h-3.5"></i>
+                Official Ecosystem Codelab
+              </a>
+            </div>
+          </div>
+
+          <!-- Builder Track Card -->
+          <div class="border border-yellow-200/50 bg-yellow-50/20 rounded-2xl p-4 sm:p-5 space-y-2.5">
+            <div class="flex items-center justify-between">
+              <h3 class="font-bold text-yellow-600 text-sm sm:text-base">Builder Track (Vibecoding Lounge)</h3>
+              <span class="text-xs font-semibold px-2 py-0.5 rounded bg-yellow-500/20 text-yellow-700">50 pts</span>
+            </div>
+            <p class="text-xs text-gray-700"><strong class="text-[#1e1e1e]">Philosophy:</strong> "From Prompt to Production" — vibe coding using natural language prompts in Google AI Studio build mode.</p>
+            <p class="text-xs text-gray-600"><strong class="text-gray-700">Tech Stack:</strong> Google AI Studio Build Mode (ai.studio), natural language prompting, Google Stitch UI, 1-click Cloud Run.</p>
+            <div class="pt-1 flex flex-wrap gap-2.5">
+              <a href="https://youtu.be/xaYkxHCRmhE" target="_blank" class="inline-flex items-center gap-1 text-xs text-yellow-600 hover:text-yellow-700 underline font-medium">
+                <i data-lucide="video" class="w-3.5 h-3.5"></i>
+                Portfolio Video
+              </a>
+              <a href="https://youtu.be/t4LOHNHv-r8" target="_blank" class="inline-flex items-center gap-1 text-xs text-yellow-600 hover:text-yellow-700 underline font-medium">
+                <i data-lucide="video" class="w-3.5 h-3.5"></i>
+                Game Video
+              </a>
+              <a href="https://goo.gle/builders" target="_blank" class="inline-flex items-center gap-1 text-xs text-yellow-600 hover:text-yellow-700 underline font-medium">
+                <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+                Builders
+              </a>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Scoring Matrix Table for Desktop / Cards for Mobile -->
+      <div class="bg-white border border-gray-200 rounded-3xl p-4 sm:p-6">
+        <h3 class="text-base sm:text-lg font-bold text-[#1e1e1e] mb-3 flex items-center gap-2">
+          <i data-lucide="award" class="w-5 h-5 text-googleYellow"></i>
+          Official Scoring Matrix
+        </h3>
+        
+        <!-- Mobile Matrix Cards -->
+        <div id="mobile-rubric-cards" class="md:hidden space-y-3">
+          <!-- Rendered dynamically -->
+        </div>
+
+        <!-- Desktop Matrix Table -->
+        <div class="hidden md:block overflow-x-auto">
+          <table class="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr class="bg-gray-100 text-gray-600 uppercase tracking-wider font-semibold border-b border-gray-200">
+                <th class="py-3 px-4">Track</th>
+                <th class="py-3 px-4">Criteria</th>
+                <th class="py-3 px-4 text-emerald-600">9-10 (Excellent)</th>
+                <th class="py-3 px-4 text-blue-600">7-8 (Good)</th>
+                <th class="py-3 px-4 text-yellow-600">5-6 (Adequate)</th>
+                <th class="py-3 px-4 text-rose-600">1-4 (Needs Work)</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-800 text-gray-700" id="rubric-matrix-body">
+              <!-- Populated dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ==================== TAB 4: STORAGE & SYNC ==================== -->
+    <section id="view-sync" class="hidden space-y-4 sm:space-y-6">
+      
+      <div class="max-w-4xl mx-auto space-y-4 sm:space-y-6">
+        
+        <div class="bg-white border border-gray-200 rounded-3xl p-4 sm:p-8">
+          <h2 class="text-xl sm:text-2xl font-bold text-[#1e1e1e] mb-1.5 font-display">Persistent Memory & Cloud Storage</h2>
+          <p class="text-xs sm:text-sm text-gray-600">
+            Real-time synchronization across Google Sheets source of truth and Google Cloud Storage (GCS).
+          </p>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mt-5">
+            
+            <!-- Google Sheets Status -->
+            <div class="bg-gray-50 border border-gray-200 rounded-2xl p-4 sm:p-5 space-y-2.5">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold text-emerald-600 flex items-center gap-1.5">
+                  <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                  Source of Truth
+                </span>
+                <i data-lucide="file-spreadsheet" class="w-5 h-5 text-gray-600"></i>
+              </div>
+              <h4 class="font-bold text-[#1e1e1e] text-sm sm:text-base">Google Sheets API</h4>
+              <p class="text-[11px] text-gray-600 font-mono break-all" id="sheet-id-display">ID: 1-YAJhGgrphQhwlUmQcjNVDHK2uRc7jV-2XPA69z8u3E</p>
+              <div class="pt-1 text-xs text-gray-700 space-y-1">
+                <div>Status: <span id="sheet-status-text" class="text-emerald-600 font-medium">Connected</span></div>
+                <div>Last Synced: <span id="sheet-sync-time" class="text-gray-600 font-mono">Just now</span></div>
+              </div>
+              <div class="pt-2">
+                <button onclick="triggerManualSync()" class="w-full py-2.5 px-3 rounded-xl bg-gray-100 hover:bg-gray-200 active:scale-95 text-gray-800 text-xs font-semibold transition flex items-center justify-center gap-2">
+                  <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                  <span>Sync from Google Sheets Now</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Cloud Storage Status -->
+            <div class="bg-gray-50 border border-gray-200 rounded-2xl p-4 sm:p-5 space-y-2.5">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold text-blue-600 flex items-center gap-1.5">
+                  <span class="w-2 h-2 rounded-full bg-blue-400"></span>
+                  Cloud Persistence
+                </span>
+                <i data-lucide="cloud" class="w-5 h-5 text-blue-600"></i>
+              </div>
+              <h4 class="font-bold text-[#1e1e1e] text-sm sm:text-base">Google Cloud Storage (GCS)</h4>
+              <div class="pt-1 text-xs text-gray-700 space-y-1">
+                <div>Bucket Status: <span id="gcs-status-text" class="text-blue-600 font-medium">Active & Synced</span></div>
+                <div>Last Snapshot: <span id="gcs-backup-time" class="text-gray-600 font-mono">Just now</span></div>
+              </div>
+              <div class="pt-2">
+                <button onclick="triggerManualBackup()" class="w-full py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-500 active:scale-95 text-white text-xs font-semibold transition flex items-center justify-center gap-2">
+                  <i data-lucide="upload-cloud" class="w-3.5 h-3.5"></i>
+                  <span>Push Snapshot to GCS Now</span>
+                </button>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Export Options -->
+          <div class="mt-5 pt-5 border-t border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h4 class="text-xs sm:text-sm font-bold text-[#1e1e1e]">Export CSV Format</h4>
+              <p class="text-[11px] text-gray-600">Formatted to paste directly into Google Sheets tabs.</p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <a href="/api/export/csv?track=developer" class="flex-1 sm:flex-none text-center px-3.5 py-2 rounded-xl bg-gray-100 hover:bg-gray-300 text-xs font-semibold text-[#1e1e1e] transition">
+                Dev Track CSV
+              </a>
+              <a href="/api/export/csv?track=builder" class="flex-1 sm:flex-none text-center px-3.5 py-2 rounded-xl bg-gray-100 hover:bg-gray-300 text-xs font-semibold text-[#1e1e1e] transition">
+                Builder Track CSV
+              </a>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- Mobile Bottom Navigation Bar (Persistent Thumb Navigation) -->
+  <nav aria-label="Mobile Navigation" class="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-lg border-t border-gray-200/80 px-2 py-1.5 flex items-center justify-around pb-safe">
+    
+    <button onclick="switchTab('leaderboard')" id="mob-nav-leaderboard" class="flex flex-col items-center justify-center w-16 py-1 text-googleBlue font-semibold transition" aria-label="View Leaderboard">
+      <i data-lucide="trophy" class="w-5 h-5"></i>
+      <span class="text-[10px] mt-0.5">Leaderboard</span>
+    </button>
+
+    <button onclick="switchTab('judge')" id="mob-nav-judge" class="flex flex-col items-center justify-center w-16 py-1 text-gray-600 font-medium transition" aria-label="View Judge Portal">
+      <i data-lucide="award" class="w-5 h-5"></i>
+      <span class="text-[10px] mt-0.5">Judge</span>
+    </button>
+
+    <button onclick="switchTab('rubric')" id="mob-nav-rubric" class="flex flex-col items-center justify-center w-16 py-1 text-gray-600 font-medium transition" aria-label="View Rubric">
+      <i data-lucide="book-open" class="w-5 h-5"></i>
+      <span class="text-[10px] mt-0.5">Rubric</span>
+    </button>
+
+    <button onclick="switchTab('sync')" id="mob-nav-sync" class="flex flex-col items-center justify-center w-16 py-1 text-gray-600 font-medium transition relative" aria-label="View Storage and Sync">
+      <i data-lucide="cloud" class="w-5 h-5"></i>
+      <span class="text-[10px] mt-0.5">Storage</span>
+      <span class="absolute top-1 right-3 w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+    </button>
+
+  </nav>
+
+  <!-- Team Details Modal (Responsive bottom-sheet on mobile / centered dialog on desktop) -->
+  <div id="details-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-end sm:items-center justify-center p-0 sm:p-4 transition-opacity">
+    <div class="bg-white border-t sm:border border-gray-200 rounded-t-3xl sm:rounded-3xl max-w-2xl w-full max-h-[85vh] sm:max-h-[90vh] overflow-y-auto p-5 sm:p-6 shadow-md relative custom-scrollbar">
+      <button onclick="closeDetailsModal()" class="absolute right-4 top-4 p-2 rounded-full text-gray-600 hover:text-[#1e1e1e] hover:bg-gray-100 transition">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+
+      <div id="modal-content">
+        <!-- Rendered dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="fixed bottom-20 md:bottom-6 right-4 sm:right-6 z-[100] opacity-0 translate-y-4 pointer-events-none transform transition-all duration-300" role="status" aria-live="polite">
+    <div id="toast-body" class="bg-gray-50 border border-gray-300 text-[#1e1e1e] px-4 py-3 rounded-2xl shadow-md flex items-center space-x-2.5 text-xs sm:text-sm">
+      <i data-lucide="check-circle" id="toast-icon" class="w-4 h-4 text-emerald-600 flex-shrink-0"></i>
+      <span id="toast-message" class="font-medium">Action successful</span>
+    </div>
+  </div>
+
+  <!-- Footer (Desktop only) -->
+  <footer class="hidden md:block border-t border-gray-200 bg-[#f0f0f0] py-6 text-xs text-gray-600 mt-auto">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between">
+      <div class="flex items-center space-x-2">
+        <img src="/assets/devfest-lockup-black.png" alt="DevFest Bay Area" class="h-5 w-auto opacity-75">
+        <span>• GDG Sunnyvale • DevFest Bay Area 2026</span>
+      </div>
+      <div class="flex items-center space-x-3">
+        <span>Circuit Launch, Mountain View</span>
+        <span>•</span>
+        <span class="text-gray-600">Deployed on Google Cloud Run & Cloud Storage</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Floating Exit Projector Button -->
+  <button id="exit-projector-btn" onclick="toggleProjectorMode()" class="fixed bottom-6 right-6 px-4 py-2 bg-[#1e1e1e] text-white rounded-full shadow-lg z-[100] hidden flex items-center gap-2">
+    <i data-lucide="minimize" class="w-4 h-4"></i> Exit Fullscreen
+  </button>
+
+  <script src="/app.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      lucide.createIcons();
+    });
+  </script>
+</body>
+</html>

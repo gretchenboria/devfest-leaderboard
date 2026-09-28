@@ -1,0 +1,22 @@
+{
+  "name": "devfest-leaderboard",
+  "version": "1.0.0",
+  "description": "DevFest Bay Area 2026 Leaderboard & Judging App with Google Sheets & Cloud Storage Sync",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "@google-cloud/storage": "^7.15.2",
+    "cors": "^2.8.5",
+    "csv-parse": "^5.5.6",
+    "express": "^4.21.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^25.12.0"
+  }
+}

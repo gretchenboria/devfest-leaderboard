@@ -1,0 +1,161 @@
+{
+  "scores": [
+    {
+      "id": "dev_team_cloud_native_judge_smith",
+      "track": "Developer Track",
+      "teamName": "Team Cloud Native",
+      "judgeName": "Judge Smith",
+      "scores": {
+        "techExecution": 9,
+        "securityPrivacy": 10,
+        "scalabilityArch": 9,
+        "agenticInnovation": 10,
+        "presentationDemo": 10
+      },
+      "totalScore": 48,
+      "notes": "Great use of Gemini",
+      "source": "Google Sheets",
+      "timestamp": "2026-09-28T03:04:43.733Z"
+    },
+    {
+      "id": "dev_secure_scale_judge_smith",
+      "track": "Developer Track",
+      "teamName": "Secure Scale",
+      "judgeName": "Judge Smith",
+      "scores": {
+        "techExecution": 8,
+        "securityPrivacy": 9,
+        "scalabilityArch": 8,
+        "agenticInnovation": 8,
+        "presentationDemo": 9
+      },
+      "totalScore": 42,
+      "notes": "Solid architecture",
+      "source": "Google Sheets",
+      "timestamp": "2026-09-28T03:04:43.733Z"
+    },
+    {
+      "id": "dev_team_cloud_native_judge_doe",
+      "track": "Developer Track",
+      "teamName": "Team Cloud Native",
+      "judgeName": "Judge Doe",
+      "scores": {
+        "techExecution": 10,
+        "securityPrivacy": 9,
+        "scalabilityArch": 10,
+        "agenticInnovation": 9,
+        "presentationDemo": 10
+      },
+      "totalScore": 48,
+      "notes": "Excellent demo",
+      "source": "Google Sheets",
+      "timestamp": "2026-09-28T03:04:43.733Z"
+    },
+    {
+      "id": "builder_vibe_coders_mentor_alex",
+      "track": "Builder Track",
+      "teamName": "Vibe Coders",
+      "judgeName": "Mentor Alex",
+      "scores": {
+        "creativityConcept": 9,
+        "geminiUtilization": 9,
+        "uxDesign": 10,
+        "workingPrototype": 9,
+        "pitchClarity": 8
+      },
+      "totalScore": 45,
+      "notes": "Very creative",
+      "source": "Google Sheets",
+      "timestamp": "2026-09-28T03:04:43.734Z"
+    },
+    {
+      "id": "builder_ai_builders_mentor_alex",
+      "track": "Builder Track",
+      "teamName": "AI Builders",
+      "judgeName": "Mentor Alex",
+      "scores": {
+        "creativityConcept": 8,
+        "geminiUtilization": 8,
+        "uxDesign": 7,
+        "workingPrototype": 8,
+        "pitchClarity": 7
+      },
+      "totalScore": 38,
+      "notes": "Good start",
+      "source": "Google Sheets",
+      "timestamp": "2026-09-28T03:04:43.734Z"
+    },
+    {
+      "id": "builder_vibe_coders_mentor_sam",
+      "track": "Builder Track",
+      "teamName": "Vibe Coders",
+      "judgeName": "Mentor Sam",
+      "scores": {
+        "creativityConcept": 10,
+        "geminiUtilization": 8,
+        "uxDesign": 9,
+        "workingPrototype": 10,
+        "pitchClarity": 9
+      },
+      "totalScore": 46,
+      "notes": "Loved the UI",
+      "source": "Google Sheets",
+      "timestamp": "2026-09-28T03:04:43.734Z"
+    },
+    {
+      "id": "app_1790559942714_b639w",
+      "track": "Developer Track",
+      "teamName": "Team Gemini Agents",
+      "judgeName": "Dr. Gretchen",
+      "scores": {
+        "techExecution": 10,
+        "securityPrivacy": 10,
+        "scalabilityArch": 9,
+        "agenticInnovation": 10,
+        "presentationDemo": 10
+      },
+      "totalScore": 49,
+      "notes": "Phenomenal full-stack agentic architecture and Cloud Run deployment!",
+      "source": "Judge App",
+      "timestamp": "2026-09-28T01:45:42.714Z"
+    },
+    {
+      "id": "app_1790560434053_g1lwt",
+      "track": "Developer Track",
+      "teamName": "DevFest Quantum",
+      "judgeName": "Judge Sarah Lin",
+      "scores": {
+        "techExecution": 9,
+        "securityPrivacy": 9,
+        "scalabilityArch": 9,
+        "agenticInnovation": 9,
+        "presentationDemo": 9
+      },
+      "totalScore": 45,
+      "notes": "Spectacular real-time integration with Google Cloud Run & Firestore!",
+      "source": "Judge App",
+      "timestamp": "2026-09-28T01:53:54.053Z"
+    },
+    {
+      "id": "app_1790560549426_q2mfx",
+      "track": "Builder Track",
+      "teamName": "Vertex Agents AI",
+      "judgeName": "Judge Maria Rodriguez",
+      "scores": {
+        "creativityConcept": 10,
+        "geminiUtilization": 9,
+        "uxDesign": 9,
+        "workingPrototype": 9,
+        "pitchClarity": 9
+      },
+      "totalScore": 46,
+      "notes": "Outstanding multi-modal prototype created with Google AI Studio and Stitch!",
+      "source": "Judge App",
+      "timestamp": "2026-09-28T01:55:49.426Z"
+    }
+  ],
+  "lastSyncTime": "2026-09-28T03:04:43.734Z",
+  "syncStatus": "Synced (9 total entries)",
+  "gcsBackupTime": "2026-09-28T03:03:59.876Z",
+  "gcsStatus": "Active & Synced"
+}

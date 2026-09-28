@@ -1,0 +1,70 @@
+/* DevFest Bay Area 2026 Custom Styles */
+
+body.projector-active {
+  font-size: 1.15rem;
+}
+
+body.projector-active header {
+  display: none;
+}
+
+body.projector-active #view-leaderboard .bg-white {
+  border-width: 2px;
+}
+
+body.projector-active #podium-container {
+  margin-top: 1rem;
+  margin-bottom: 2rem;
+}
+
+/* Range slider styling */
+input[type="range"] {
+  -webkit-appearance: none;
+  background: #e5e7eb;
+  height: 8px;
+  border-radius: 4px;
+  outline: none;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #4285F4;
+  cursor: pointer;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 8px rgba(66, 133, 244, 0.6);
+  transition: transform 0.1s ease;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+
+input[type="range"]::-webkit-slider-thumb:active {
+  transform: scale(0.95);
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #f0f0f0;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .pb-safe {
+    padding-bottom: calc(0.375rem + env(safe-area-inset-bottom));
+  }
+}
