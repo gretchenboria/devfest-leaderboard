@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DevFest Bay Area 2026 | Live Stage</title>
+  <link rel="icon" type="image/png" href="/assets/hot-sauce-sticker.png">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            googleBlue: '#4285F4', googleRed: '#EA4335',
+            googleYellow: '#FBBC04', googleGreen: '#34A853',
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            display: ['"Google Sans"', 'Outfit', 'sans-serif']
+          }
+        }
+      }
+    }
+  </script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Outfit:wght@600;800&display=swap" rel="stylesheet">
+  <style>
+    body { background-color: #f0f0f0; color: #1e1e1e; overflow: hidden; }
+    .float { animation: float 6s ease-in-out infinite; }
+    @keyframes float { 0% { transform: translateY(0px); } 50% { transform: translateY(-20px); } 100% { transform: translateY(0px); } }
+    .bg-grid { background-size: 40px 40px; background-image: linear-gradient(to right, rgba(0, 0, 0, 0.05) 1px, transparent 1px), linear-gradient(to bottom, rgba(0, 0, 0, 0.05) 1px, transparent 1px); }
+  </style>
+</head>
+<body class="bg-grid min-h-screen flex flex-col justify-center items-center relative">
+  <!-- Top Branding -->
+  <div class="absolute top-8 left-8 flex items-center gap-4">
+    <img src="/assets/df26-lockup-black.png" alt="DevFest" class="h-10">
+    <span class="px-3 py-1 bg-googleBlue text-white font-bold rounded-full text-sm">Live Stage</span>
+  </div>
+
+  <!-- Main Timer Widget -->
+  <div class="text-center z-10 flex flex-col items-center">
+    <h1 class="text-3xl md:text-5xl font-display font-extrabold text-gray-800 mb-6 tracking-tight">HACKING ENDS IN</h1>
+    <div class="flex gap-4 md:gap-8 font-mono text-5xl md:text-8xl font-black text-googleBlue drop-shadow-md">
+      <div class="flex flex-col items-center bg-white px-6 md:px-8 py-4 md:py-6 rounded-3xl shadow-xl border-t-4 border-googleBlue">
+        <span id="hours">04</span>
+        <span class="text-sm md:text-lg text-gray-500 font-sans mt-2">HOURS</span>
+      </div>
+      <div class="flex flex-col items-center bg-white px-6 md:px-8 py-4 md:py-6 rounded-3xl shadow-xl border-t-4 border-googleRed">
+        <span id="minutes">45</span>
+        <span class="text-sm md:text-lg text-gray-500 font-sans mt-2">MINUTES</span>
+      </div>
+      <div class="flex flex-col items-center bg-white px-6 md:px-8 py-4 md:py-6 rounded-3xl shadow-xl border-t-4 border-googleYellow">
+        <span id="seconds">30</span>
+        <span class="text-sm md:text-lg text-gray-500 font-sans mt-2">SECONDS</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Team Spotlight -->
+  <div class="absolute bottom-12 right-12 w-96 bg-white p-6 rounded-2xl shadow-2xl border-l-8 border-googleGreen">
+    <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Team Spotlight</h3>
+    <p id="team-name" class="text-2xl font-display font-bold text-[#1e1e1e] truncate">Fetching Teams...</p>
+    <p id="team-track" class="text-sm text-googleGreen font-medium mt-1">DevFest 2026</p>
+  </div>
+
+  <!-- Wi-Fi -->
+  <div class="absolute bottom-12 left-12 bg-white p-6 rounded-2xl shadow-xl border border-gray-200">
+    <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Event Wi-Fi</h3>
+    <p class="text-xl font-bold text-gray-800">Network: <span class="text-googleBlue">DevFest_Guest</span></p>
+    <p class="text-lg font-medium text-gray-600">Password: <span class="font-mono bg-gray-100 px-2 py-1 rounded">BuildSecureScale</span></p>
+  </div>
+
+  <!-- Decor -->
+  <img src="/assets/hot-sauce-sticker.png" class="absolute top-20 right-20 w-48 opacity-80 float transform rotate-12" />
+
+  <script>
+    // Timer Logic
+    const endTime = new Date();
+    endTime.setHours(endTime.getHours() + 4);
+    
+    setInterval(() => {
+      const now = new Date();
+      const diff = endTime - now;
+      if (diff <= 0) return;
+      const h = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      const s = Math.floor((diff % (1000 * 60)) / 1000);
+      document.getElementById('hours').innerText = h.toString().padStart(2, '0');
+      document.getElementById('minutes').innerText = m.toString().padStart(2, '0');
+      document.getElementById('seconds').innerText = s.toString().padStart(2, '0');
+    }, 1000);
+
+    // Team Spotlight Logic
+    let teams = ["Team Cloud Native", "Secure Scale", "Vibe Coders", "AI Builders"];
+    fetch('/api/scores')
+      .then(r => r.json())
+      .then(data => {
+        if(data && data.scores && data.scores.length > 0) {
+          teams = data.scores.map(s => ({ name: s.teamName, track: s.track }));
+        }
+      });
+      
+    setInterval(() => {
+      const randomTeam = teams[Math.floor(Math.random() * teams.length)];
+      const nameEl = document.getElementById('team-name');
+      const trackEl = document.getElementById('team-track');
+      
+      nameEl.style.opacity = 0; trackEl.style.opacity = 0;
+      setTimeout(() => {
+        if(typeof randomTeam === 'string') {
+           nameEl.innerText = randomTeam; trackEl.innerText = "DevFest 2026";
+        } else {
+           nameEl.innerText = randomTeam.name; trackEl.innerText = randomTeam.track;
+        }
+        nameEl.style.transition = "opacity 0.5s"; trackEl.style.transition = "opacity 0.5s";
+        nameEl.style.opacity = 1; trackEl.style.opacity = 1;
+      }, 500);
+    }, 8000);
+  </script>
+</body>
+</html>
