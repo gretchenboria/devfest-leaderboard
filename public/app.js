@@ -3,7 +3,7 @@ let currentTab = 'leaderboard';
 let currentTrackFilter = 'all';
 let allTeams = [];
 let rubricData = null;
-let autoRefreshTimer = null;
+
 let isProjectorMode = false;
 
 // Initialize on page load
@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadLeaderboard();
 
   // Setup auto-refresh every 15 seconds
-  autoRefreshTimer = setInterval(loadLeaderboard, 15000);
+  
 
   // Setup criteria inputs
   updateRubricCriteria();
@@ -709,11 +709,21 @@ async function handleScoreSubmit(e) {
     const notesEl = document.getElementById('judge-notes');
     if (notesEl) notesEl.value = '';
 
-    // Reload leaderboard and switch back
+    // Reload leaderboard silently in background
     await loadLeaderboard();
-    setTimeout(() => {
-      switchTab('leaderboard');
-    }, 1000);
+    
+    // Reset sliders for the next team
+    sliders.forEach(s => {
+      s.value = 0;
+      updateSliderBackground(s);
+      const valSpan = document.getElementById(`val_${s.name.split('_')[1]}`);
+      if (valSpan) valSpan.innerText = '0/10';
+    });
+    calculateTotal();
+    
+    // Keep user on the judge portal and scroll to top
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    showToast(`✓ Score recorded for "${teamName}"! Ready for the next team.`);
 
   } catch (err) {
     alert('Error saving score: ' + err.message);
@@ -860,3 +870,55 @@ function escapeHtml(str) {
   if (!str) return '';
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
+
+
+// --- ROLE BASED ACCESS CONTROL ---
+document.addEventListener('DOMContentLoaded', () => {
+  const urlParams = new URLSearchParams(window.location.search);
+  const role = urlParams.get('role') || 'public'; // default to public
+  
+  const navLeaderboard = document.querySelectorAll('#tab-btn-leaderboard, #mob-nav-leaderboard');
+  const navJudge = document.querySelectorAll('#tab-btn-judge, #mob-nav-judge');
+  const navRubric = document.querySelectorAll('#tab-btn-rubric, #mob-nav-rubric');
+  const navSync = document.querySelectorAll('#tab-btn-sync, #mob-nav-sync');
+
+  // Helper to hide elements
+  const hideAll = (elements) => elements.forEach(el => { if(el) el.style.display = 'none'; });
+
+  if (role === 'public') {
+    hideAll(navJudge);
+    hideAll(navRubric);
+    hideAll(navSync);
+    switchTab('leaderboard');
+  } else if (role === 'judge') {
+    hideAll(navSync);
+    hideAll(navLeaderboard); // Exclusive view
+    // Auto prompt password
+    if (!sessionStorage.getItem('judge_auth_passed')) {
+       const pin = prompt("Enter the Judge Password to access the portal:");
+       // Call the backend to verify the judge password securely
+       fetch('/api/auth', {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify({ type: 'judge', password: pin })
+       }).then(res => {
+         if (res.ok) {
+           sessionStorage.setItem('judge_auth_passed', 'true');
+           switchTab('judge'); // Force UI to update now that auth passed
+         } else {
+           alert("Incorrect password! Redirecting to public view.");
+           window.location.href = '/?role=public';
+         }
+       }).catch(() => {
+         alert("Error connecting to server. Redirecting.");
+         window.location.href = '/?role=public';
+       });
+       return; // Wait for fetch to finish
+    }
+    switchTab('judge');
+  } else if (role === 'admin') {
+    // Show everything (default CSS)
+    switchTab('sync');
+  }
+});
+// ---------------------------------

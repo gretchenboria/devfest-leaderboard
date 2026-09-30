@@ -1,3 +1,8 @@
+const crypto = require('crypto');
+const { OAuth2Client } = require('google-auth-library');
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+const nodemailer = require('nodemailer');
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
@@ -6,13 +11,17 @@ const https = require('https');
 const { parse } = require('csv-parse/sync');
 const { Storage } = require('@google-cloud/storage');
 
+
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'devving';
+const ADMIN_BEARER_TOKEN = crypto.createHash('sha256').update(ADMIN_PASSWORD).digest('hex');
+
 const app = express();
 const PORT = process.env.PORT || 8888;
 const GCS_BUCKET_NAME = process.env.GCS_BUCKET || 'devfest2026-leaderboard-gde';
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), { setHeaders: (res) => res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private') }));
 
 // Local persistence file path
 const DATA_DIR = path.join(__dirname, 'data');
@@ -195,6 +204,8 @@ const RUBRIC_DATA = {
 
 // In-memory data store (Persistent Memory)
 let appState = {
+  allowedAdmins: ['gretchen.beach@gmail.com'],
+  claims: [], // Volunteer signups
   scores: [], // Array of score entries
   lastSyncTime: null,
   syncStatus: "Initializing",
@@ -321,11 +332,55 @@ async function backupToCloudStorage() {
   }
   try {
     appState.gcsStatus = "Backing up...";
+    
+    // FIRST: Read latest from GCS so we don't overwrite other instances' changes!
+    const gcsFileRef = bucket.file('devfest2026_scores_latest.json');
+    const [exists] = await gcsFileRef.exists();
+    if (exists) {
+      try {
+        const [contents] = await gcsFileRef.download();
+        const remoteState = JSON.parse(contents.toString('utf8'));
+        
+        // Merge allowedAdmins (union)
+        if (remoteState.allowedAdmins) {
+          appState.allowedAdmins = [...new Set([...appState.allowedAdmins, ...remoteState.allowedAdmins])];
+        }
+        
+        // Merge claims (union by timestamp)
+        if (remoteState.claims) {
+          const allClaims = [...appState.claims, ...remoteState.claims];
+          // Remove duplicates based on timestamp
+          const uniqueClaims = [];
+          const seen = new Set();
+          for (let c of allClaims) {
+            if (!seen.has(c.timestamp)) {
+              seen.add(c.timestamp);
+              uniqueClaims.push(c);
+            } else {
+              // If duplicate exists, prefer the one where isCaptain might be true
+              if (c.isCaptain) {
+                const idx = uniqueClaims.findIndex(uc => uc.timestamp === c.timestamp);
+                if (idx > -1) uniqueClaims[idx].isCaptain = true;
+              }
+            }
+          }
+          appState.claims = uniqueClaims;
+        }
+        
+        // Merge instructions
+        if (remoteState.volunteerInstructions && !appState.volunteerInstructions) {
+          appState.volunteerInstructions = remoteState.volunteerInstructions;
+        }
+      } catch(e) {
+        console.error("Failed to merge remote state:", e);
+      }
+    }
+    
     const dataToSave = JSON.stringify(appState, null, 2);
     
     // Save latest
-    const file = bucket.file('devfest2026_scores_latest.json');
-    await file.save(dataToSave, {
+    
+    await gcsFileRef.save(dataToSave, {
       contentType: 'application/json',
       metadata: {
         cacheControl: 'no-cache',
@@ -541,6 +596,33 @@ app.get('/api/leaderboard', (req, res) => {
 });
 
 // Get raw scores list
+
+// --- SERVER-SENT EVENTS (SSE) FOR SILENT BACKGROUND UPDATES ---
+let sseClients = [];
+
+app.get('/api/stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const clientId = Date.now() + Math.random();
+  sseClients.push({ id: clientId, res });
+
+  // Send an initial heartbeat
+  res.write('event: connected\ndata: {}\n\n');
+
+  req.on('close', () => {
+    sseClients = sseClients.filter(c => c.id !== clientId);
+  });
+});
+
+function broadcastEvent(eventType, payload) {
+  sseClients.forEach(client => {
+    client.res.write(`event: ${eventType}\ndata: ${JSON.stringify(payload)}\n\n`);
+  });
+}
+
 app.get('/api/scores', (req, res) => {
   res.json({
     count: appState.scores.length,
@@ -597,6 +679,7 @@ app.post('/api/scores', async (req, res) => {
     await saveToLocalDisk();
     await backupToCloudStorage();
 
+    broadcastEvent('scores_updated', appState.scores);
     res.json({
       success: true,
       message: `Score of ${newEntry.totalScore}/50 recorded successfully!`,
@@ -652,11 +735,635 @@ app.get('/api/export/csv', (req, res) => {
 });
 
 // Fallback to SPA index.html
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
+
 
 // Start Server & Initialize State
+
+// --- INTERACTIVE STAGE LOGIC ---
+let interactionQueue = [];
+
+app.post('/api/interact', (req, res) => {
+  const { teamName, action } = req.body;
+  if (!teamName || !action) return res.status(400).json({ error: 'Missing teamName or action' });
+  interactionQueue.push({ teamName, action, timestamp: Date.now() });
+  // Keep queue manageable
+  if (interactionQueue.length > 100) interactionQueue.shift();
+  res.json({ success: true });
+});
+
+app.get('/api/interactions', (req, res) => {
+  const current = [...interactionQueue];
+  interactionQueue = []; // flush queue after reading
+  res.json({ interactions: current });
+});
+// -------------------------------
+
+
+// --- VOLUNTEER HUB LOGIC ---
+ 
+const WRIKE_TOKEN = process.env.WRIKE_TOKEN || "eyJ0dCI6InAiLCJhbGciOiJIUzI1NiIsInR2IjoiMiJ9.eyJkIjoie1wiYVwiOjcyMjQ2OTEsXCJpXCI6OTg0MjM3MSxcImNcIjo0NzQwMjkwLFwidVwiOjI1OTQzMDAyLFwiclwiOlwiVVNcIixcInNcIjpbXCJXXCIsXCJGXCIsXCJJXCIsXCJVXCIsXCJLXCIsXCJDXCIsXCJEXCIsXCJNXCIsXCJBXCIsXCJMXCIsXCJQXCJdLFwielwiOltdLFwidFwiOjB9IiwiaWF0IjoxNzg2NTA3ODc2fQ.MfLrayA9vrem_-_2QA50izOZgJBGiRuS1RTv8Iuhygw";
+const FOLDER_ID = process.env.WRIKE_FOLDER_ID || "MQAAAAEOCyNH";
+const VOLUNTEERS_FILE = path.join(DATA_DIR, 'volunteers.json');
+
+// Ensure volunteers file exists
+if (!fs.existsSync(VOLUNTEERS_FILE)) {
+  fs.writeFileSync(VOLUNTEERS_FILE, JSON.stringify([]));
+}
+
+app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
+app.get('/volunteer', (req, res) => res.sendFile(path.join(__dirname, 'public', 'volunteer.html')));
+
+app.get('/api/volunteer/tasks', async (req, res) => {
+  try {
+    const url = `https://www.wrike.com/api/v4/folders/${FOLDER_ID}/tasks?fields=['description']`;
+    const response = await fetch(url, { headers: { 'Authorization': `bearer ${WRIKE_TOKEN}` } });
+    const data = await response.json();
+    
+    // Filter only tasks starting with [Volunteer]
+    const vTasks = (data.data || [])
+      .filter(t => t.title.startsWith('[Volunteer]'))
+      .map(t => ({
+        id: t.id,
+        title: t.title.replace('\[Volunteer\]', '').replace(/Recruit for:?\s*/i, '').trim(),
+        description: (t.description || 'DevFest Bay Area 2026 Volunteer Task').replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|li|h[1-6])>/gi, '\n\n').replace(/&nbsp;/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/ +/g, ' ').replace(/ \n/g, '\n').replace(/\n /g, '\n').replace(/Time Commitment:/gi, '\n\n⏱️ Time Commitment:').replace(/Responsibility:/gi, '📋 Responsibility:').trim(),
+        status: t.status
+      }));
+
+    // Inject Venue Deck Instructions based on team assignment
+    vTasks.forEach(t => {
+      const titleLower = t.title.toLowerCase();
+      if (titleLower.includes('registration') || titleLower.includes('check-in')) {
+        t.venueInstructions = "📍 **Venue Ops (Room 101):** 3 check-in tables for rapid NFC badging. You must ensure attendees sign the mandatory Circuit Launch digital waiver via QR code. Handle 21+ wristbanding and swag handoff.";
+      } else if (titleLower.includes('wayfind') || titleLower.includes('security') || titleLower.includes('parking')) {
+        t.venueInstructions = "📍 **Venue Ops (Security/Wayfinding):** Manage Moffett Blvd traffic and Google lot shuttles. Monitor door access. Circuit Launch lot is STRICTLY for speakers, VIPs, ADA, and vendor load-in.";
+      } else if (titleLower.includes('tech') || titleLower.includes('av') || titleLower.includes('stage')) {
+        t.venueInstructions = "📍 **Venue Ops (Tech/AV):** Main Auditorium (~120 seats). CRITICAL FLIP (10:30-11:00 AM): 20-min fast table flip from theater chairs to 15-20 foldable tables. 60 chairs must be stacked on perimeter racks.";
+      } else if (titleLower.includes('food') || titleLower.includes('guest')) {
+        t.venueInstructions = "📍 **Venue Ops (Food):** Rear lot tents (10-ft train track clearance). Double ID Check (verify wristband at bar). Manage Circuit Launch large cooler + ice tubs.";
+      } else if (titleLower.includes('clean') || titleLower.includes('sweep')) {
+        t.venueInstructions = "📍 **Venue Ops (Cleanup):** Hourly sweeps to replace bags and wipe tables. Teardown (6:30-8:30 PM): 30 tables folded, chair stacking, vacuuming, full facility reset.";
+      }
+      
+      if (appState.roleInstructions && appState.roleInstructions[t.id]) {
+        t.venueInstructions = (t.venueInstructions ? t.venueInstructions + "\n\n" : "") + "📌 **Admin Update:** " + appState.roleInstructions[t.id];
+      }
+    });
+      
+    // Read local claims
+    const claims = appState.claims || [];
+    const claimedIds = claims.map(c => c.taskId);
+    
+    // Annotate
+    const finalTasks = vTasks.map(t => {
+       t.claimCount = claimedIds.filter(id => id === t.id).length;
+       t.claimed = t.claimCount >= 10;
+       return t;
+    });
+    res.json(finalTasks);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch Wrike tasks' });
+  }
+});
+
+// Save minimal PII securely
+
+
+async function notifyVolunteerOfSignup(volunteerEmail, firstName, taskId) {
+  const { SMTP_USER, SMTP_PASS } = process.env;
+  if (!SMTP_USER || !SMTP_PASS) {
+    console.log("Volunteer email skipped: SMTP credentials not configured");
+    return;
+  }
+  
+  try {
+    // Fetch task from Wrike to get title and description
+    const url = `https://www.wrike.com/api/v4/tasks/${taskId}?fields=['description']`;
+    const wRes = await fetch(url, { headers: { 'Authorization': `bearer ${WRIKE_TOKEN}` } });
+    const wData = await wRes.json();
+    let taskTitle = "Volunteer Task";
+    let taskDesc = "";
+    if (wData && wData.data && wData.data.length > 0) {
+      taskTitle = wData.data[0].title.replace('\[Volunteer\]', '').replace(/Recruit for:?\s*/i, '').trim();
+      taskDesc = (wData.data[0].description || '').replace(/<[^>]+>/g, ' ').trim();
+    }
+
+    // Determine venue instructions
+    let venueInstructions = "";
+    const titleLower = taskTitle.toLowerCase();
+    if (titleLower.includes('registration') || titleLower.includes('check-in')) {
+      venueInstructions = "📍 Venue Ops (Room 101): 3 check-in tables for rapid NFC badging. Ensure attendees sign the mandatory Circuit Launch digital waiver via QR code. Handle 21+ wristbanding and swag handoff.";
+    } else if (titleLower.includes('wayfind') || titleLower.includes('security') || titleLower.includes('parking')) {
+      venueInstructions = "📍 Venue Ops (Security/Wayfinding): Manage Moffett Blvd traffic and Google lot shuttles. Monitor door access. Circuit Launch lot is STRICTLY for speakers, VIPs, ADA, and vendor load-in.";
+    } else if (titleLower.includes('tech') || titleLower.includes('av') || titleLower.includes('stage')) {
+      venueInstructions = "📍 Venue Ops (Tech/AV): Main Auditorium (~120 seats). CRITICAL FLIP (10:30-11:00 AM): 20-min fast table flip from theater chairs to 15-20 foldable tables. 60 chairs must be stacked on perimeter racks.";
+    } else if (titleLower.includes('food') || titleLower.includes('guest')) {
+      venueInstructions = "📍 Venue Ops (Food): Rear lot tents (10-ft train track clearance). Double ID Check (verify wristband at bar). Manage Circuit Launch large cooler + ice tubs.";
+    } else if (titleLower.includes('clean') || titleLower.includes('sweep')) {
+      venueInstructions = "📍 Venue Ops (Cleanup): Hourly sweeps to replace bags and wipe tables. Teardown (6:30-8:30 PM): 30 tables folded, chair stacking, vacuuming, full facility reset.";
+    }
+
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: { user: SMTP_USER, pass: SMTP_PASS }
+    });
+
+    let htmlContent = `
+      <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
+        <h2 style="color: #4285F4;">You're officially on the roster, ${firstName}! 🎉</h2>
+        <p>Thank you so much for signing up to help at DevFest Bay Area 2026. Here are the details for your assignment:</p>
+        
+        <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #e0e0e0;">
+          <h3 style="margin-top: 0; color: #202124;">${taskTitle}</h3>
+          <p style="font-size: 14px; color: #5f6368;">${taskDesc}</p>
+        </div>
+    `;
+
+    if (venueInstructions) {
+      htmlContent += `
+        <div style="background-color: #e8f0fe; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #d2e3fc;">
+          <h4 style="margin-top: 0; color: #174ea6; margin-bottom: 8px;">Important Venue Instructions</h4>
+          <p style="font-size: 14px; color: #174ea6; margin: 0;">${venueInstructions}</p>
+        </div>
+      `;
+    }
+
+
+    if (appState.roleInstructions && appState.roleInstructions[taskId]) {
+      venueInstructions = (venueInstructions ? venueInstructions + "<br><br>" : "") + "📌 <b>Admin Update:</b> " + appState.roleInstructions[taskId];
+    }
+    if (appState.volunteerInstructions) {
+      htmlContent += `
+        <div style="margin-top: 30px;">
+          <h4 style="color: #202124;">General Organizer Instructions:</h4>
+          <div style="font-size: 14px; color: #3c4043;">
+            ${appState.volunteerInstructions.replace(/\n/g, '<br>')}
+          </div>
+        </div>
+      `;
+    }
+
+    htmlContent += `
+        <p style="margin-top: 30px; font-size: 14px; color: #5f6368;">
+          If you need to update your phone number, you can simply sign up again on the Volunteer Hub using the same email address.<br>
+          See you at Circuit Launch!
+        </p>
+      </div>
+    `;
+
+    await transporter.sendMail({
+      from: '"DevFest 2026 Organizing Team" <' + SMTP_USER + '>',
+      to: volunteerEmail,
+      subject: 'Your DevFest Volunteer Assignment: ' + taskTitle,
+      html: htmlContent
+    });
+    console.log("Sent confirmation email to volunteer:", volunteerEmail);
+  } catch(e) {
+    console.error("Failed to send volunteer email:", e);
+  }
+}
+
+async function notifyAdminOfSignup() {
+  const { SMTP_USER, SMTP_PASS, ADMIN_EMAIL } = process.env;
+  if (!SMTP_USER || !SMTP_PASS || !ADMIN_EMAIL) {
+    console.log("Email notification skipped: SMTP_USER, SMTP_PASS, or ADMIN_EMAIL not configured in .env");
+    return;
+  }
+
+  try {
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: { user: SMTP_USER, pass: SMTP_PASS }
+    });
+
+    const claims = appState.claims || [];
+    let htmlContent = `<h2 style="color: #4285F4;">DevFest Volunteer Update 🚀</h2>
+                       <p>A new volunteer just signed up! Here is the complete list of all active sign-ups:</p>
+                       <table border="1" cellpadding="8" style="border-collapse: collapse; width: 100%;">
+                         <tr style="background-color: #f3f3f3;">
+                           <th>Task ID</th><th>First Name</th><th>Last Initial</th><th>Email</th><th>Phone</th>
+                         </tr>`;
+
+    claims.forEach(c => {
+      // Decrypt the email for the admin
+      let decryptedEmail = "Error decrypting";
+      try {
+        const parts = c.encryptedEmail.split(':');
+        const iv = Buffer.from(parts.shift(), 'hex');
+        const encryptedText = Buffer.from(parts.join(':'), 'hex');
+        const decipher = crypto.createDecipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY), iv);
+        let decrypted = decipher.update(encryptedText);
+        decrypted = Buffer.concat([decrypted, decipher.final()]);
+        decryptedEmail = decrypted.toString();
+        
+        let decryptedPhone = "N/A";
+        if (c.phoneData) {
+          const pParts = c.phoneData.split(':');
+          const pIv = Buffer.from(pParts.shift(), 'hex');
+          const pEncryptedText = Buffer.from(pParts.join(':'), 'hex');
+          const pDecipher = crypto.createDecipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY), pIv);
+          let pDec = pDecipher.update(pEncryptedText);
+          pDec = Buffer.concat([pDec, pDecipher.final()]);
+          decryptedPhone = pDec.toString();
+        }
+        c.decryptedPhone = decryptedPhone;
+      } catch (e) {
+        console.error("Decryption failed for email", e);
+      }
+
+      htmlContent += `<tr>
+        <td>${c.taskId}</td>
+        <td>${c.firstName}</td>
+        <td>${c.lastInitial}</td>
+        <td><a href="mailto:${decryptedEmail}">${decryptedEmail}</a></td>
+        <td>${c.decryptedPhone || 'N/A'}</td>
+      </tr>`;
+    });
+
+    htmlContent += `</table><p>Log in to your Admin Portal to send blast announcements!</p>`;
+
+    await transporter.sendMail({
+      from: `"DevFest Leaderboard" <${SMTP_USER}>`,
+      to: ADMIN_EMAIL,
+      subject: "New Volunteer Signup! 🚀",
+      html: htmlContent
+    });
+    console.log("Admin notification email sent successfully.");
+  } catch (error) {
+    console.error("Failed to send admin email:", error);
+  }
+}
+
+app.post('/api/volunteer/claim', async (req, res) => {
+  const { taskId, firstName, lastInitial, email, phoneNumber } = req.body;
+  if (!taskId || !firstName || !email || !phoneNumber) return res.status(400).json({ error: 'Missing required fields' });
+  
+  // Encrypt email (minimal PII security)
+  const algorithm = 'aes-256-cbc';
+  const key = crypto.scryptSync('devfest2026_secret_key', 'salt', 32);
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv(algorithm, key, iv);
+  let encryptedEmail = cipher.update(email, 'utf8', 'hex');
+  encryptedEmail += cipher.final('hex');
+  
+  const cipherPhone = crypto.createCipheriv(algorithm, key, iv);
+  let encryptedPhone = cipherPhone.update(phoneNumber, 'utf8', 'hex');
+  encryptedPhone += cipherPhone.final('hex');
+  
+  const claimRecord = {
+    taskId,
+    displayName: `${firstName} ${lastInitial}.`,
+    emailData: `${iv.toString('hex')}:${encryptedEmail}`, // securely stored
+    phoneData: `${iv.toString('hex')}:${encryptedPhone}`,
+    timestamp: Date.now()
+  };
+  
+  const claims = appState.claims || [];
+  
+  // Find if this email already claimed this task
+  let existingIndex = -1;
+  for (let i = 0; i < claims.length; i++) {
+    let c = claims[i];
+    if (c.taskId === taskId && c.emailData) {
+      try {
+        const parts = c.emailData.split(':');
+        const civ = Buffer.from(parts.shift(), 'hex');
+        const cEncryptedText = Buffer.from(parts.join(':'), 'hex');
+        const ccipher = crypto.createDecipheriv('aes-256-cbc', key, civ);
+        let dec = ccipher.update(cEncryptedText);
+        dec = Buffer.concat([dec, ccipher.final()]);
+        if (dec.toString().toLowerCase() === email.toLowerCase()) {
+          existingIndex = i;
+          break;
+        }
+      } catch (e) {}
+    }
+  }
+
+  if (existingIndex > -1) {
+    claims[existingIndex] = claimRecord; // Update the existing sign-up
+  } else {
+    const existingCount = claims.filter(c => c.taskId === taskId).length;
+    if (existingCount >= 10) return res.status(400).json({ error: 'This role has reached its 10-person capacity.' });
+    claims.push(claimRecord);
+  }
+  appState.claims = claims;
+  if (!appState.roleInstructions) appState.roleInstructions = {};
+  if (!appState.captainInstructions) appState.captainInstructions = {};
+
+  saveToLocalDisk();
+  backupToCloudStorage();
+  
+  // We intentionally do not mutate the Wrike task status here anymore
+  // so that unlimited volunteers can sign up for the same role without closing it.
+  
+  notifyAdminOfSignup(); // Fire async email
+  notifyVolunteerOfSignup(email, firstName, taskId); // Send confirmation to volunteer
+  res.json({ success: true, message: 'Task successfully claimed!' });
+});
+// -----------------------------
+
+
+// --- ADMIN & INSTRUCTIONS LOGIC ---
+ 
+const JUDGE_PASS = process.env.JUDGE_PASSWORD || "alldevswin";
+
+if(!appState.volunteerInstructions) {
+  appState.volunteerInstructions = "Welcome to the DevFest Volunteer team! Please make sure to check in at the front desk 15 minutes before your shift.";
+}
+
+app.get('/api/auth/status', (req, res) => {
+  res.json({ isSetup: !!appState.admin });
+});
+
+app.post('/api/auth/setup', async (req, res) => {
+  if (appState.admin) {
+    return res.status(400).json({ error: 'Admin already configured' });
+  }
+  const { username, password } = req.body;
+  if (!username || !password) return res.status(400).json({ error: 'Missing fields' });
+  
+  const hash = crypto.createHash('sha256').update(password).digest('hex');
+  appState.admin = { username, hash };
+  
+  await saveToLocalDisk();
+  await backupToCloudStorage();
+  
+  res.json({ success: true });
+});
+
+
+app.get('/api/auth/config', (req, res) => {
+  res.json({ clientId: process.env.GOOGLE_CLIENT_ID });
+});
+
+app.post('/api/auth/google', async (req, res) => {
+  const { credential } = req.body;
+  if (!credential) return res.status(400).json({ error: 'Missing credential' });
+
+  try {
+    const ticket = await googleClient.verifyIdToken({
+      idToken: credential,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+    const email = payload['email'];
+
+    if (appState.allowedAdmins && appState.allowedAdmins.includes(email.toLowerCase())) {
+      return res.json({ success: true, token: ADMIN_BEARER_TOKEN, email });
+    }
+    return res.status(403).json({ error: 'Unauthorized email: ' + email });
+  } catch (err) {
+    console.error("Google Auth Error:", err);
+    return res.status(401).json({ error: 'Invalid Google token' });
+  }
+});
+
+app.post('/api/auth', (req, res) => {
+  const { username, password, type } = req.body;
+  
+  if (type === 'admin') {
+    if (!appState.admin) return res.status(400).json({ error: 'Not setup' });
+    const hash = crypto.createHash('sha256').update(password).digest('hex');
+    if (appState.admin.username === username && appState.admin.hash === hash) {
+      return res.json({ success: true, token: ADMIN_BEARER_TOKEN });
+    }
+  } else if (type === 'judge') {
+    if (password === JUDGE_PASS) {
+      return res.json({ success: true, token: 'judge_token_mock' });
+    }
+  }
+  return res.status(401).json({ error: 'Invalid credentials' });
+});
+
+app.get('/api/instructions', (req, res) => {
+  res.json({ text: appState.volunteerInstructions });
+});
+
+
+
+function requireAdmin(req, res, next) {
+  const auth = req.headers.authorization;
+  if (!auth || auth !== 'Bearer ' + ADMIN_BEARER_TOKEN) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+}
+
+
+
+app.post('/api/admin/volunteers/:taskId/captain', requireAdmin, async (req, res) => {
+  try {
+    let claims = appState.claims || [];
+    const { timestamp } = req.body;
+    let found = false;
+    for (let c of claims) {
+      if (c.taskId === req.params.taskId && c.timestamp == timestamp) {
+        c.isCaptain = !c.isCaptain;
+        found = true;
+        break;
+      }
+    }
+    if (found) {
+      appState.claims = claims;
+      saveToLocalDisk();
+      backupToCloudStorage();
+      res.json({ success: true });
+    } else {
+      res.status(404).json({ error: 'Volunteer not found' });
+    }
+  } catch(e) {
+    res.status(500).json({ error: 'Failed to update captain status' });
+  }
+});
+
+
+app.post('/api/admin/assign', requireAdmin, async (req, res) => {
+  const { taskId, firstName, lastInitial, email, phone, isCaptain } = req.body;
+  
+  if (!taskId || !firstName || !email) return res.status(400).json({ error: 'Missing required fields' });
+  
+  const existingCount = (appState.claims || []).filter(c => c.taskId === taskId).length;
+  // Let admins override the cap of 10 if they want, or enforce it? Let's just bypass cap for Admins.
+
+  // Encrypt
+  const cipherEmail = crypto.createCipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY), iv);
+  let encryptedEmail = cipherEmail.update(email, 'utf8', 'hex');
+  encryptedEmail += cipherEmail.final('hex');
+  encryptedEmail = iv.toString('hex') + ':' + encryptedEmail;
+  
+  let encryptedPhone = '';
+  if (phone) {
+    const cipherPhone = crypto.createCipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY), iv);
+    encryptedPhone = cipherPhone.update(phone, 'utf8', 'hex');
+    encryptedPhone += cipherPhone.final('hex');
+    encryptedPhone = iv.toString('hex') + ':' + encryptedPhone;
+  }
+
+  const claimRecord = {
+    taskId,
+    displayName: `${firstName} ${lastInitial || 'X'}.`,
+    emailData: encryptedEmail,
+    phoneData: encryptedPhone,
+    timestamp: Date.now(),
+    isCaptain: !!isCaptain
+  };
+  
+  appState.claims = appState.claims || [];
+  // Remove dummy data while we're at it (since this endpoint touches state, it will save it)
+  const realNames = ['Peeya', 'Hande', 'Jaynesh', 'Veeresh', 'Ishai', 'Suresh', 'Jorge', 'Tatiana', firstName];
+  appState.claims = appState.claims.filter(c => realNames.some(n => c.displayName.includes(n)));
+  
+  appState.claims.push(claimRecord);
+  
+  await saveToLocalDisk();
+  await backupToCloudStorage();
+  res.json({ success: true });
+});
+
+app.delete('/api/admin/volunteers/:taskId', requireAdmin, async (req, res) => {
+  try {
+    let claims = appState.claims || [];
+    
+    const { timestamp } = req.body;
+    const newClaims = claims.filter(c => !(c.taskId === req.params.taskId && c.timestamp === timestamp));
+
+    appState.claims = newClaims;
+    saveToLocalDisk();
+    backupToCloudStorage();
+    res.json({ success: true });
+  } catch(e) {
+    res.status(500).json({ error: 'Failed to delete' });
+  }
+});
+
+app.get('/api/admin/volunteers', requireAdmin, (req, res) => {
+  // Normally verify token here
+  try {
+    const claims = appState.claims || [];
+    const results = claims.map(c => {
+      let decryptedEmail = "Error decrypting";
+      try {
+        if (c.emailData) {
+          const parts = c.emailData.split(':');
+          const iv = Buffer.from(parts.shift(), 'hex');
+          const encryptedText = Buffer.from(parts.join(':'), 'hex');
+          const key = crypto.scryptSync('devfest2026_secret_key', 'salt', 32);
+          const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+          let decrypted = decipher.update(encryptedText);
+          decrypted = Buffer.concat([decrypted, decipher.final()]);
+          decryptedEmail = decrypted.toString();
+        }
+      } catch (e) {
+        console.error("Decryption failed for email", e);
+      }
+      let decryptedPhone = 'N/A';
+      try {
+        if (c.phoneData) {
+          const parts = c.phoneData.split(':');
+          const iv = Buffer.from(parts.shift(), 'hex');
+          const encryptedText = Buffer.from(parts.join(':'), 'hex');
+          const key = crypto.scryptSync('devfest2026_secret_key', 'salt', 32);
+          const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+          let decrypted = decipher.update(encryptedText);
+          decrypted = Buffer.concat([decrypted, decipher.final()]);
+          decryptedPhone = decrypted.toString();
+        }
+      } catch (e) {}
+      return {
+        taskId: c.taskId,
+        displayName: c.displayName,
+        email: decryptedEmail,
+        phone: decryptedPhone,
+        isCaptain: !!c.isCaptain,
+        timestamp: c.timestamp
+      };
+    });
+    res.json({ success: true, volunteers: results });
+  } catch(e) {
+    res.status(500).json({ error: 'Failed to read volunteers' });
+  }
+});
+
+
+app.post('/api/admin/add_admin', requireAdmin, async (req, res) => {
+  const { newAdminEmail } = req.body;
+  if (newAdminEmail && !appState.allowedAdmins.includes(newAdminEmail.toLowerCase())) {
+    appState.allowedAdmins.push(newAdminEmail.toLowerCase());
+    await saveToLocalDisk();
+    await backupToCloudStorage();
+    return res.json({ success: true, allowedAdmins: appState.allowedAdmins });
+  }
+  res.json({ success: true, allowedAdmins: appState.allowedAdmins });
+});
+
+
+app.post('/api/admin/wipe_dummies', requireAdmin, async (req, res) => {
+  // Wipe dummies (keep only Peeya, Hande, Jaynesh, Veeresh, Ishai, Suresh, Jorge, Tatiana)
+  const realNames = ['Peeya', 'Hande', 'Jaynesh', 'Veeresh', 'Ishai', 'Suresh', 'Jorge', 'Tatiana'];
+  appState.claims = (appState.claims || []).filter(c => realNames.some(n => c.firstName.includes(n)));
+  await saveToLocalDisk();
+  await backupToCloudStorage();
+  res.json({ success: true, claims: appState.claims });
+});
+app.get('/api/admin/admins', requireAdmin, (req, res) => {
+  res.json({ success: true, allowedAdmins: appState.allowedAdmins });
+});
+
+app.post('/api/instructions', requireAdmin, async (req, res) => {
+  if (!appState.roleInstructions) appState.roleInstructions = {};
+  if (!appState.captainInstructions) appState.captainInstructions = {};
+  
+  const { target, text } = req.body;
+  if (!target) {
+    // fallback for old UI
+    if (text !== undefined) {
+      appState.volunteerInstructions = text;
+      await saveToLocalDisk();
+      await backupToCloudStorage();
+      return res.json({ success: true });
+    }
+    return res.status(400).json({ error: 'Missing text' });
+  }
+
+  if (!text || text.trim() === '') {
+    if (target === 'global') appState.volunteerInstructions = '';
+    else if (target.startsWith('role_')) delete appState.roleInstructions[target.replace('role_', '')];
+    else if (target.startsWith('cap_')) delete appState.captainInstructions[target.replace('cap_', '')];
+  } else {
+    if (target === 'global') {
+      appState.volunteerInstructions = text;
+    } else if (target.startsWith('role_')) {
+      appState.roleInstructions[target.replace('role_', '')] = text;
+    } else if (target.startsWith('cap_')) {
+      appState.captainInstructions[target.replace('cap_', '')] = text;
+    }
+  }
+  
+  await saveToLocalDisk();
+  await backupToCloudStorage();
+  res.json({ success: true });
+});
+
+app.get('/api/instructions/all', requireAdmin, (req, res) => {
+  res.json({
+    global: appState.volunteerInstructions || '',
+    roles: appState.roleInstructions || {},
+    captains: appState.captainInstructions || {}
+  });
+});
+
+app.post('/api/blast', requireAdmin, (req, res) => {
+  // Dummy endpoint for Blast Notifications
+  const { message } = req.body;
+  console.log('📢 BLAST MESSAGE TO ALL VOLUNTEERS:', message);
+  broadcastEvent('blast', { message });
+  res.json({ success: true, message: 'Blast sent successfully (simulated).' });
+});
+// ----------------------------------
+
+app.get('*', (req, res) => { res.sendFile(path.join(__dirname, 'public', 'index.html')); });
+
 app.listen(PORT, async () => {
   console.log(`=======================================================`);
   console.log(`🚀 DevFest Bay Area 2026 Leaderboard & Judging App`);
