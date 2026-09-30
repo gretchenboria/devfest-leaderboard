@@ -110,10 +110,10 @@
           <table class="w-full text-left border-collapse">
             <thead>
               <tr class="bg-gray-50 border-b border-gray-100 text-xs font-bold text-gray-500 uppercase tracking-wider">
-                <th class="p-3 rounded-tl-lg">Task ID</th>
-                <th class="p-3">Volunteer</th>
-                <th class="p-3">Contact Email</th>
-                <th class="p-3">Phone</th><th class="p-3 rounded-tr-lg text-right">Actions</th>
+                <th class="p-3 rounded-tl-lg text-left">Volunteer</th>
+                <th class="p-3 text-left">Contact Email</th>
+                <th class="p-3 text-left">Phone</th>
+                <th class="p-3 rounded-tr-lg text-left">Roles & Actions</th>
               </tr>
             </thead>
             <tbody id="roster-tbody" class="text-sm divide-y divide-gray-100">
@@ -384,24 +384,43 @@
             tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-400">No volunteers have signed up yet.</td></tr>';
             return;
           }
-          tbody.innerHTML = data.volunteers.map(v => `
-            <tr class="hover:bg-gray-50 transition-colors">
-              <td class="p-3 text-xs font-mono text-gray-500">${v.taskId}</td>
-              <td class="p-3 font-bold text-gray-900 flex items-center gap-2">
-                ${v.isCaptain ? '<span title="Team Captain" class="text-yellow-500"><i data-lucide="star" class="w-4 h-4 fill-current"></i></span>' : ''}
-                ${v.displayName}
+          
+          const tRes = await fetch('/api/volunteer/tasks');
+          const tasks = await tRes.json();
+          
+          let grouped = {};
+          data.volunteers.forEach(v => {
+            if (!grouped[v.email]) grouped[v.email] = { name: v.displayName, email: v.email, phone: v.phone, roles: [] };
+            grouped[v.email].roles.push(v);
+          });
+          
+          tbody.innerHTML = Object.values(grouped).map(g => {
+            const roleStrs = g.roles.map(r => {
+              const tName = tasks.find(t => t.id === r.taskId)?.title || r.taskId;
+              return `<div class="mb-1">
+                <span class="font-bold text-gray-800">${tName}</span>
+                ${r.isCaptain ? '<span title="Team Captain" class="text-yellow-500 ml-1"><i data-lucide="star" class="w-3 h-3 inline fill-current"></i></span>' : ''}
+                <div class="inline-block ml-2">
+                  <button onclick="toggleCaptain('${r.taskId}', ${r.timestamp})" class="${r.isCaptain ? 'text-gray-500 hover:text-gray-700' : 'text-yellow-600 hover:text-yellow-800'} text-[10px] font-bold px-1 rounded border mr-1">${r.isCaptain ? 'Demote' : 'Make Captain'}</button>
+                  <button onclick="deleteVolunteer('${r.taskId}', ${r.timestamp})" class="text-red-500 hover:text-red-700 text-[10px] font-bold px-1 rounded border border-red-200">Remove</button>
+                </div>
+              </div>`;
+            }).join('');
+            
+            return `
+            <tr class="hover:bg-gray-50 transition-colors border-b border-gray-100">
+              <td class="p-3">
+                <div class="font-bold text-gray-900">${g.name}</div>
               </td>
-              <td class="p-3"><a href="mailto:${v.email}" class="text-blue-600 hover:underline">${v.email}</a></td>
-              <td class="p-3 text-gray-700">${v.phone}</td>
-              <td class="p-3 text-right">
-                <button onclick="toggleCaptain('${v.taskId}', ${v.timestamp})" class="${v.isCaptain ? 'text-gray-500 bg-gray-50 border-gray-200 hover:text-gray-700' : 'text-yellow-600 bg-yellow-50 border-yellow-200 hover:text-yellow-800'} text-xs font-bold px-2 py-1 rounded border mr-1">${v.isCaptain ? 'Demote' : 'Make Captain'}</button>
-                <button onclick="deleteVolunteer('${v.taskId}')" class="text-red-500 hover:text-red-700 text-xs font-bold px-2 py-1 bg-red-50 rounded border border-red-200">Remove</button>
-              </td>
-            </tr>
-          `).join('');
+              <td class="p-3"><a href="mailto:${g.email}" class="text-blue-600 hover:underline text-sm">${g.email}</a></td>
+              <td class="p-3 text-gray-700 text-sm">${g.phone}</td>
+              <td class="p-3 text-sm">${roleStrs}</td>
+            </tr>`;
+          }).join('');
+          lucide.createIcons();
         }
       } catch(e) {
-        tbody.innerHTML = '<tr><td colspan="3" class="p-4 text-center text-red-500">Failed to load roster.</td></tr>';
+        console.error("loadVolunteers error:", e);
       }
     }
   
@@ -491,6 +510,7 @@
       if (sessionStorage.getItem('admin_token')) {
         document.getElementById('dashboard-section').classList.remove('hidden');
         loadVolunteers();
+        loadInstructionTargets();
         loadAdmins();
         return;
       }
@@ -632,6 +652,17 @@
           cci.innerHTML = html || '<p class="text-sm text-gray-400">No custom instructions set yet.</p>';
           lucide.createIcons();
         }
+
+    document.getElementById('inst-target').onchange = async (e) => {
+      const target = e.target.value;
+      const iRes = await fetch('/api/instructions/all', { headers: { 'Authorization': 'Bearer ' + sessionStorage.getItem('admin_token') } });
+      const iData = await iRes.json();
+      const ta = document.getElementById('instructions-input');
+      if (target === 'global') ta.value = iData.global || '';
+      else if (target.startsWith('role_')) ta.value = (iData.roles && iData.roles[target.replace('role_', '')]) || '';
+      else if (target.startsWith('cap_')) ta.value = (iData.captains && iData.captains[target.replace('cap_', '')]) || '';
+    };
+
       } catch(e) {
         console.error("loadInstructionTargets error:", e);
       }
