@@ -18,7 +18,9 @@ async function run() {
 
   const page = await browser.newPage();
   await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
-  await page.goto('http://127.0.0.1:8888', { waitUntil: 'networkidle2' });
+  // Rubric and Storage & Sync tabs are hidden in the default public view, so
+  // open the organizer view. BASE_URL lets it target any local port.
+  await page.goto((process.env.BASE_URL || 'http://127.0.0.1:8888') + '/?role=admin', { waitUntil: 'networkidle2' });
   await new Promise(r => setTimeout(r, 600));
 
   // Test 8: Click first card to view details modal

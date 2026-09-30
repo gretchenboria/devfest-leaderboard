@@ -10,7 +10,8 @@ const path = require('path');
 const https = require('https');
 const { parse } = require('csv-parse/sync');
 const { Storage } = require('@google-cloud/storage');
-const { mergeRemoteState } = require('./lib/stateMerge');
+const { mergeRemoteState, normalizeInstructions } = require('./lib/stateMerge');
+const { recommendedInstructions, VENUE_NOTES } = require('./lib/eventInstructions');
 const { createSessionSigner, bearerToken } = require('./lib/session');
 const {
   TaskError, LIMITS: TASK_LIMITS, normalizeFields, cleanStatus, cleanNote, createTask, applyUpdate, addNote,
@@ -357,6 +358,7 @@ function ensureStateShape() {
   if (!Array.isArray(appState.deletedScores)) appState.deletedScores = [];
   if (!Array.isArray(appState.scores)) appState.scores = [];
   if (!appState.tasks || typeof appState.tasks !== 'object' || Array.isArray(appState.tasks)) appState.tasks = {};
+  normalizeInstructions(appState);
 }
 
 // Merge a copy of the state read from GCS into memory (see lib/stateMerge.js).
@@ -944,10 +946,10 @@ app.get('/team', (req, res) => res.sendFile(path.join(__dirname, 'public', 'team
 // unreachable we fall back to the last good list or the five known teams.
 const FALLBACK_ROLES = [
   { id: "MAAAAAEPa5hl", title: "Registration", description: "NFC badging required. Hand off swag bags." },
-  { id: "MAAAAAEQvpZa", title: "Security & Wayfinding", description: "Monitor Moffett Blvd traffic and shuttles." },
-  { id: "MAAAAAEPa5hz", title: "Tech Support", description: "20-min flip at 10:30 AM: Theater to tables." },
+  { id: "MAAAAAEQvpZa", title: "Security & Wayfinding", description: "Signage, door monitoring, crowd flow and Moffett Blvd traffic." },
+  { id: "MAAAAAEPa5hz", title: "Tech Support", description: "Main Stage AV, laptop lab turnover and Rm 117 power & Wi-Fi." },
   { id: "MAAAAAEPa5hq", title: "Food & Beverage", description: "Verify 21+ wristbands. Monitor large cooler and ice tubs." },
-  { id: "MAAAAAEPa5hu", title: "Event Cleanup", description: "Hourly sweeps. Teardown at 6:30 PM." }
+  { id: "MAAAAAEPa5hu", title: "Event Cleanup", description: "Hourly sweeps. Teardown 9:00–10:00 PM." }
 ];
 const ROLES_TTL_MS = 60 * 1000;
 let rolesCache = { at: 0, roles: null };
@@ -995,18 +997,8 @@ app.get('/api/volunteer/tasks', async (req, res) => {
 
     // Inject Venue Deck Instructions based on team assignment
     vTasks.forEach(t => {
-      const titleLower = t.title.toLowerCase();
-      if (titleLower.includes('registration') || titleLower.includes('check-in')) {
-        t.venueInstructions = "📍 **Venue Ops (Room 101):** 3 check-in tables for rapid NFC badging. You must ensure attendees sign the mandatory Circuit Launch digital waiver via QR code. Handle 21+ wristbanding and swag handoff.";
-      } else if (titleLower.includes('wayfind') || titleLower.includes('security') || titleLower.includes('parking')) {
-        t.venueInstructions = "📍 **Venue Ops (Security/Wayfinding):** Manage Moffett Blvd traffic and Google lot shuttles. Monitor door access. Circuit Launch lot is STRICTLY for speakers, VIPs, ADA, and vendor load-in.";
-      } else if (titleLower.includes('tech') || titleLower.includes('av') || titleLower.includes('stage')) {
-        t.venueInstructions = "📍 **Venue Ops (Tech/AV):** Main Auditorium (~120 seats). CRITICAL FLIP (10:30-11:00 AM): 20-min fast table flip from theater chairs to 15-20 foldable tables. 60 chairs must be stacked on perimeter racks.";
-      } else if (titleLower.includes('food') || titleLower.includes('guest')) {
-        t.venueInstructions = "📍 **Venue Ops (Food):** Rear lot tents (10-ft train track clearance). Double ID Check (verify wristband at bar). Manage Circuit Launch large cooler + ice tubs.";
-      } else if (titleLower.includes('clean') || titleLower.includes('sweep')) {
-        t.venueInstructions = "📍 **Venue Ops (Cleanup):** Hourly sweeps to replace bags and wipe tables. Teardown (6:30-8:30 PM): 30 tables folded, chair stacking, vacuuming, full facility reset.";
-      }
+      const kind = roleKind(t.title);
+      if (kind) t.venueInstructions = VENUE_NOTES[kind];
 
       if (appState.roleInstructions && appState.roleInstructions[t.id]) {
         t.venueInstructions = (t.venueInstructions ? t.venueInstructions + "\n\n" : "") + "📌 **Admin Update:** " + appState.roleInstructions[t.id];
@@ -1053,24 +1045,10 @@ async function notifyVolunteerOfSignup(volunteerEmail, firstName, taskId) {
     }
 
     // Determine venue instructions
-    let venueInstructions = "";
-    const titleLower = taskTitle.toLowerCase();
-    if (titleLower.includes('registration') || titleLower.includes('check-in')) {
-      venueInstructions = "📍 Venue Ops (Room 101): 3 check-in tables for rapid NFC badging. Ensure attendees sign the mandatory Circuit Launch digital waiver via QR code. Handle 21+ wristbanding and swag handoff.";
-    } else if (titleLower.includes('wayfind') || titleLower.includes('security') || titleLower.includes('parking')) {
-      venueInstructions = "📍 Venue Ops (Security/Wayfinding): Manage Moffett Blvd traffic and Google lot shuttles. Monitor door access. Circuit Launch lot is STRICTLY for speakers, VIPs, ADA, and vendor load-in.";
-    } else if (titleLower.includes('tech') || titleLower.includes('av') || titleLower.includes('stage')) {
-      venueInstructions = "📍 Venue Ops (Tech/AV): Main Auditorium (~120 seats). CRITICAL FLIP (10:30-11:00 AM): 20-min fast table flip from theater chairs to 15-20 foldable tables. 60 chairs must be stacked on perimeter racks.";
-    } else if (titleLower.includes('food') || titleLower.includes('guest')) {
-      venueInstructions = "📍 Venue Ops (Food): Rear lot tents (10-ft train track clearance). Double ID Check (verify wristband at bar). Manage Circuit Launch large cooler + ice tubs.";
-    } else if (titleLower.includes('clean') || titleLower.includes('sweep')) {
-      venueInstructions = "📍 Venue Ops (Cleanup): Hourly sweeps to replace bags and wipe tables. Teardown (6:30-8:30 PM): 30 tables folded, chair stacking, vacuuming, full facility reset.";
-    }
+    const kind = roleKind(taskTitle);
+    let venueInstructions = kind ? VENUE_NOTES[kind].replace(/\*\*/g, '') : '';
 
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: { user: SMTP_USER, pass: SMTP_PASS }
-    });
+    const transporter = getMailer();
 
     let htmlContent = `
       <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
@@ -1101,7 +1079,7 @@ async function notifyVolunteerOfSignup(volunteerEmail, firstName, taskId) {
         <div style="margin-top: 30px;">
           <h4 style="color: #202124;">General Organizer Instructions:</h4>
           <div style="font-size: 14px; color: #3c4043;">
-            ${appState.volunteerInstructions.replace(/\n/g, '<br>')}
+            ${escapeHtml(appState.volunteerInstructions).replace(/\n/g, '<br>')}
           </div>
         </div>
       `;
@@ -1135,10 +1113,7 @@ async function notifyAdminOfSignup() {
   }
 
   try {
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: { user: SMTP_USER, pass: SMTP_PASS }
-    });
+    const transporter = getMailer();
 
     const claims = appState.claims || [];
     let htmlContent = `<h2 style="color: #4285F4;">DevFest Volunteer Update 🚀</h2>
@@ -1385,9 +1360,6 @@ app.post('/api/volunteer/claim', async (req, res) => {
 
 const JUDGE_PASS = process.env.JUDGE_PASSWORD || "alldevswin";
 
-if(!appState.volunteerInstructions) {
-  appState.volunteerInstructions = "Welcome to the DevFest Volunteer team! Please make sure to check in at the front desk 15 minutes before your shift.";
-}
 
 function isAdminEmail(email) {
   return appState.allowedAdmins.includes(String(email || '').toLowerCase());
@@ -1860,7 +1832,6 @@ app.get('/api/admin/tasks', requireAdmin, async (req, res) => {
         id: role.id,
         title: role.title,
         kind,
-        channel: kind ? KINDS[kind].channel : null,
         captains: captainsOfRole(role.id),
         volunteerCount: new Set(appState.claims.filter(c => c.taskId === role.id).map(c => claimPersonKey(c) || c.timestamp)).size,
         progress: progressOf(tasks),
@@ -2006,7 +1977,6 @@ app.get('/api/team/tasks', requireMember, async (req, res) => {
       return {
         id: role.id,
         title: role.title,
-        channel: kind ? KINDS[kind].channel : null,
         canEdit: captainRoleIds.has(role.id),
         captains: captainsOfRole(role.id).map(c => c.name),
         progress: progressOf(tasks),
@@ -2052,55 +2022,269 @@ app.patch('/api/team/tasks/:id', requireMember, async (req, res) => {
   }
 });
 
-app.post('/api/instructions', requireAdmin, async (req, res) => {
-  if (!appState.roleInstructions) appState.roleInstructions = {};
-  if (!appState.captainInstructions) appState.captainInstructions = {};
-  
-  const { target, text } = req.body;
-  if (!target) {
-    // fallback for old UI
-    if (text !== undefined) {
-      appState.volunteerInstructions = text;
-      await saveToLocalDisk();
-      await backupToCloudStorage();
-      return res.json({ success: true });
-    }
-    return res.status(400).json({ error: 'Missing text' });
-  }
+// --- INSTRUCTIONS ---
+// Targets: 'global' (all volunteers), 'judges', 'role_<roleId>', 'cap_<email>'.
+// Stored per target with an edit time so every Cloud Run instance converges on
+// the newest edit (lib/stateMerge.js).
+const INSTRUCTION_MAX = 2000;
 
-  if (!text || text.trim() === '') {
-    if (target === 'global') appState.volunteerInstructions = '';
-    else if (target.startsWith('role_')) delete appState.roleInstructions[target.replace('role_', '')];
-    else if (target.startsWith('cap_')) delete appState.captainInstructions[target.replace('cap_', '')];
-  } else {
-    if (target === 'global') {
-      appState.volunteerInstructions = text;
-    } else if (target.startsWith('role_')) {
-      appState.roleInstructions[target.replace('role_', '')] = text;
-    } else if (target.startsWith('cap_')) {
-      appState.captainInstructions[target.replace('cap_', '')] = text;
-    }
+function validInstructionTarget(target) {
+  if (target === 'global' || target === 'judges') return true;
+  if (/^role_[A-Za-z0-9_-]{1,64}$/.test(target)) return true;
+  if (target.startsWith('cap_') && EMAIL_RE.test(target.slice(4))) return true;
+  return false;
+}
+
+function setInstruction(target, text, by) {
+  const prev = appState.instructions[target];
+  appState.instructions[target] = { text, at: Math.max(Date.now(), ((prev && prev.at) || 0) + 1), by };
+  normalizeInstructions(appState);
+}
+
+app.post('/api/instructions', requireAdmin, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const target = body.target === undefined ? 'global' : String(body.target);
+    const text = String(body.text === undefined || body.text === null ? '' : body.text).trim();
+    if (!validInstructionTarget(target)) return res.status(400).json({ error: 'Unknown instruction target' });
+    if (text.length > INSTRUCTION_MAX) return res.status(400).json({ error: `Instructions are limited to ${INSTRUCTION_MAX} characters` });
+    await refreshFromCloud();
+    setInstruction(target, text, req.session.email);
+    await persist();
+    res.json({ success: true });
+  } catch (err) {
+    sendError(res, err);
   }
-  
-  await saveToLocalDisk();
-  await backupToCloudStorage();
-  res.json({ success: true });
 });
 
-app.get('/api/instructions/all', requireAdmin, (req, res) => {
+app.get('/api/instructions/all', requireAdmin, async (req, res) => {
+  await refreshFromCloud();
   res.json({
     global: appState.volunteerInstructions || '',
+    judges: appState.judgeInstructions || '',
     roles: appState.roleInstructions || {},
     captains: appState.captainInstructions || {}
   });
 });
 
-app.post('/api/blast', requireAdmin, (req, res) => {
-  // Dummy endpoint for Blast Notifications
-  const { message } = req.body;
-  console.log('📢 BLAST MESSAGE TO ALL VOLUNTEERS:', message);
-  broadcastEvent('blast', { message });
-  res.json({ success: true, message: 'Blast sent successfully (simulated).' });
+// Instructions for the judge portal (not secret: schedule and room info).
+app.get('/api/judge/instructions', async (req, res) => {
+  await refreshFromCloud();
+  res.json({ text: appState.judgeInstructions || '' });
+});
+
+// Fills every target with the recommended text from lib/eventInstructions.js.
+// By default only empty targets are filled; overwrite=true replaces all.
+app.post('/api/admin/instructions/recommended', requireAdmin, async (req, res) => {
+  try {
+    await refreshFromCloud();
+    const overwrite = !!(req.body || {}).overwrite;
+    const applied = [];
+    for (const [target, text] of Object.entries(recommendedInstructions())) {
+      const cur = appState.instructions[target];
+      if (!overwrite && cur && cur.text && cur.at > 0) continue;
+      setInstruction(target, text, req.session.email);
+      applied.push(target);
+    }
+    if (applied.length) await persist();
+    res.json({ success: true, applied });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+// --- JUDGE EMAIL LIST (admin-managed; stored encrypted like other PII) ---
+const JUDGE_EMAILS_MAX = 200;
+
+function judgeEmailList() {
+  const data = appState.judgeEmails && appState.judgeEmails.data;
+  if (!data) return [];
+  try {
+    const list = JSON.parse(decryptField(data));
+    return Array.isArray(list) ? list : [];
+  } catch (e) {
+    console.error('[Judges] Could not decrypt the judge email list');
+    return [];
+  }
+}
+
+// Accepts a pasted blob (commas, semicolons, spaces, new lines, "Name <a@b.c>").
+function parseEmailList(input) {
+  const raw = Array.isArray(input) ? input.join('\n') : String(input || '');
+  const valid = [];
+  const invalid = [];
+  const seen = new Set();
+  for (let tok of raw.split(/[\s,;]+/)) {
+    tok = tok.replace(/^[<("']+|[>)"']+$/g, '').trim();
+    if (!tok) continue;
+    if (!tok.includes('@')) continue; // names around the address
+    const email = tok.toLowerCase();
+    if (email.length > 254 || !EMAIL_RE.test(email)) { invalid.push(tok); continue; }
+    if (!seen.has(email)) { seen.add(email); valid.push(email); }
+  }
+  return { valid, invalid };
+}
+
+app.get('/api/admin/judges', requireAdmin, async (req, res) => {
+  await refreshFromCloud();
+  res.json({ success: true, emails: judgeEmailList(), updatedAt: (appState.judgeEmails && appState.judgeEmails.at) || null });
+});
+
+app.put('/api/admin/judges', requireAdmin, async (req, res) => {
+  try {
+    const { valid, invalid } = parseEmailList((req.body || {}).emails);
+    if (invalid.length) return res.status(400).json({ error: `Not valid email addresses: ${invalid.slice(0, 5).join(', ')}` });
+    if (valid.length > JUDGE_EMAILS_MAX) return res.status(400).json({ error: `At most ${JUDGE_EMAILS_MAX} judge emails` });
+    await refreshFromCloud();
+    const prevAt = (appState.judgeEmails && appState.judgeEmails.at) || 0;
+    appState.judgeEmails = { data: encryptField(JSON.stringify(valid)), at: Math.max(Date.now(), prevAt + 1), by: req.session.email };
+    await persist();
+    res.json({ success: true, emails: valid });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+// --- BLAST (live banner + email) ---
+// The banner goes out over SSE to every open page on this instance and is also
+// saved as appState.lastBlast, which pages poll, so viewers connected to other
+// Cloud Run instances see it too. Email goes through Gmail SMTP (SMTP_USER /
+// SMTP_PASS) in BCC batches.
+const BLAST_MAX_CHARS = 1000;
+const BLAST_BATCH_SIZE = 50;           // recipients per message (BCC)
+const BLAST_MAX_RECIPIENTS = 450;      // stay under Gmail's ~500/day sending limit
+const BLAST_BATCH_DELAY_MS = Number(process.env.BLAST_BATCH_DELAY_MS || 1500);
+const BLAST_AUDIENCES = ['volunteers', 'judges', 'both'];
+
+let mailTransportOverride = null;
+function emailConfigured() {
+  return !!(mailTransportOverride || (process.env.SMTP_USER && process.env.SMTP_PASS));
+}
+function getMailer() {
+  if (mailTransportOverride) return mailTransportOverride;
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) return null;
+  return nodemailer.createTransport({ service: 'gmail', auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } });
+}
+function mailFrom() {
+  return `"DevFest Bay Area 2026 Organizers" <${process.env.SMTP_USER || 'devfest@localhost'}>`;
+}
+
+function escapeHtml(v) {
+  return String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function volunteerEmailList() {
+  const out = [];
+  let undecryptable = 0;
+  for (const c of appState.claims) {
+    const email = safeDecrypt(c.emailData).trim().toLowerCase();
+    if (email && EMAIL_RE.test(email)) out.push(email);
+    else undecryptable++;
+  }
+  return { emails: out, undecryptable };
+}
+
+function blastEmail(message, audience) {
+  const who = audience === 'judges' ? 'judges' : audience === 'volunteers' ? 'volunteers' : 'volunteers and judges';
+  return {
+    subject: 'DevFest Bay Area 2026: organizer announcement',
+    text: `${message}\n\n— DevFest Bay Area 2026 organizers (sent to ${who})`,
+    html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;color:#202124">
+      <h2 style="color:#EA4335;margin:0 0 12px">DevFest Bay Area 2026 announcement</h2>
+      <div style="font-size:15px;line-height:1.5;background:#fef7e0;border:1px solid #fbbc04;border-radius:8px;padding:16px">${escapeHtml(message).replace(/\n/g, '<br>')}</div>
+      <p style="font-size:12px;color:#5f6368;margin-top:16px">Sent by the organizers to ${who}.</p>
+    </div>`
+  };
+}
+
+async function sendInBatches(recipients, mail) {
+  const transport = getMailer();
+  let emailed = 0;
+  let failed = 0;
+  const errors = [];
+  for (let i = 0; i < recipients.length; i += BLAST_BATCH_SIZE) {
+    const batch = recipients.slice(i, i + BLAST_BATCH_SIZE);
+    if (i > 0 && BLAST_BATCH_DELAY_MS > 0) await new Promise(r => setTimeout(r, BLAST_BATCH_DELAY_MS));
+    try {
+      await transport.sendMail({ from: mailFrom(), to: process.env.SMTP_USER || undefined, bcc: batch, ...mail });
+      emailed += batch.length;
+    } catch (err) {
+      failed += batch.length;
+      errors.push(err.message);
+      console.error('[Blast] Batch failed:', err.message);
+    }
+  }
+  return { emailed, failed, errors };
+}
+
+app.post('/api/blast', requireAdmin, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const message = String(body.message === undefined || body.message === null ? '' : body.message).replace(/\r\n/g, '\n').trim();
+    const audience = body.audience === undefined ? 'volunteers' : String(body.audience);
+    const test = !!body.test;
+    if (!message) return res.status(400).json({ error: 'Message cannot be empty' });
+    if (message.length > BLAST_MAX_CHARS) return res.status(400).json({ error: `Message is limited to ${BLAST_MAX_CHARS} characters` });
+    if (!BLAST_AUDIENCES.includes(audience)) return res.status(400).json({ error: 'Audience must be volunteers, judges or both' });
+
+    const configured = emailConfigured();
+    const mail = blastEmail(message, audience);
+
+    if (test) {
+      const to = (process.env.ADMIN_EMAIL || req.session.email || '').trim();
+      if (!configured) {
+        return res.json({ success: true, test: true, emailConfigured: false, emailed: 0, failed: 0, skipped: 1, to, message: 'Email not configured — test not sent.' });
+      }
+      const r = await sendInBatches([to], { ...mail, subject: '[TEST] ' + mail.subject });
+      return res.json({ success: r.failed === 0, test: true, emailConfigured: true, emailed: r.emailed, failed: r.failed, skipped: 0, to, errors: r.errors,
+        message: r.failed ? `Test email to ${to} failed: ${r.errors[0]}` : `Test email sent to ${to}.` });
+    }
+
+    await refreshFromCloud();
+    let recipients = [];
+    let skipped = 0;
+    if (audience !== 'judges') {
+      const v = volunteerEmailList();
+      recipients.push(...v.emails);
+      skipped += v.undecryptable;
+    }
+    if (audience !== 'volunteers') recipients.push(...judgeEmailList());
+    const before = recipients.length;
+    recipients = [...new Set(recipients)];
+    const duplicates = before - recipients.length;
+    if (recipients.length > BLAST_MAX_RECIPIENTS) {
+      skipped += recipients.length - BLAST_MAX_RECIPIENTS;
+      recipients = recipients.slice(0, BLAST_MAX_RECIPIENTS);
+    }
+
+    // Live banner first, so it goes out even if email is slow or fails.
+    const at = Math.max(Date.now(), ((appState.lastBlast && appState.lastBlast.at) || 0) + 1);
+    appState.lastBlast = { id: `${at}`, message, audience, at };
+    broadcastEvent('blast', appState.lastBlast);
+    await persist();
+    console.log(`[Blast] ${audience}: banner sent; ${recipients.length} email recipient(s)`);
+
+    if (!configured) {
+      return res.json({ success: true, banner: true, emailConfigured: false, emailed: 0, failed: 0, skipped: skipped + recipients.length, duplicates,
+        recipients: recipients.length, message: 'Email not configured — banner only.' });
+    }
+    const r = await sendInBatches(recipients, mail);
+    res.json({ success: r.failed === 0, banner: true, emailConfigured: true, emailed: r.emailed, failed: r.failed, skipped, duplicates,
+      recipients: recipients.length, errors: r.errors,
+      message: `Banner sent. Emailed ${r.emailed}` + (r.failed ? `, ${r.failed} failed` : '') + (skipped ? `, ${skipped} skipped` : '') + '.' });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+// Latest blast for the in-app banner (pages poll this as a fallback to SSE).
+app.get('/api/blast/latest', async (req, res) => {
+  await refreshFromCloud();
+  res.json({ blast: appState.lastBlast || null });
+});
+
+app.get('/api/admin/email/status', requireAdmin, (req, res) => {
+  res.json({ configured: emailConfigured(), testRecipient: process.env.ADMIN_EMAIL || req.session.email });
 });
 // ----------------------------------
 
@@ -2160,5 +2344,6 @@ module.exports = {
   refreshFromCloud,
   saveToLocalDisk,
   _setBucketForTests: b => { bucket = b; lastCloudPullAt = 0; },
+  _setMailTransportForTests: t => { mailTransportOverride = t; },
   _googleClient: googleClient
 };

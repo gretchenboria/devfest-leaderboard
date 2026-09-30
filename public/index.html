@@ -259,6 +259,12 @@
           <p class="text-xs sm:text-sm text-gray-600 mt-1">Tap [+] or [-] or drag sliders to evaluate. Scores sync to persistent memory and Cloud Storage in real-time.</p>
         </div>
 
+        <!-- Organizer instructions for judges (set in the admin portal) -->
+        <div id="judge-instructions" class="hidden mb-5 bg-amber-50 border border-amber-200 rounded-2xl p-4">
+          <h3 class="text-sm font-bold text-amber-900 mb-1 flex items-center gap-2"><i data-lucide="info" class="w-4 h-4"></i> Instructions for Judges</h3>
+          <p id="judge-instructions-text" class="text-xs sm:text-sm text-amber-950 whitespace-pre-line leading-relaxed"></p>
+        </div>
+
         <!-- NEW SCHEDULE SECTION -->
         <div class="mb-5 bg-blue-50/50 border border-blue-200/60 rounded-2xl p-4">
           <h3 class="text-sm font-bold text-blue-800 mb-2 flex items-center gap-2">
@@ -632,10 +638,23 @@
   </button>
 
   <script src="/app.js"></script>
+  <script src="/blast.js"></script>
   <script>
     document.addEventListener("DOMContentLoaded", () => {
       lucide.createIcons();
     });
+    (async () => {
+      try {
+        const data = await (await fetch('/api/judge/instructions', { cache: 'no-store' })).json();
+        if (data.text) {
+          document.getElementById('judge-instructions-text').textContent = data.text;
+          document.getElementById('judge-instructions').classList.remove('hidden');
+        }
+      } catch (e) { /* instructions are optional */ }
+    })();
+    // Judge-audience blasts show only to people who opened the Judge Portal.
+    const judgeBlast = DevFestBlast.init({ audience: 'judges', enabled: () => !!sessionStorage.getItem('judge_auth_passed') });
+    window.addEventListener('focus', () => judgeBlast.poll());
   </script>
 </body>
 </html>

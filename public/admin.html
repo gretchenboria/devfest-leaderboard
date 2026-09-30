@@ -185,15 +185,19 @@
       <!-- Instructions Card -->
       <div class="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 mb-6">
         <h2 class="text-lg font-bold flex items-center gap-2 mb-4"><i data-lucide="edit" class="text-blue-500"></i> Set Custom Instructions</h2>
-        <p class="text-xs text-gray-500 mb-3">Target specific roles, specific captains, or all volunteers. These show on the volunteer sign-up page and the Team page.</p>
+        <p class="text-xs text-gray-500 mb-3">Target all volunteers, one team, a captain, or the judges. Volunteer instructions show on the sign-up page and the Team page; judge instructions show in the Judge Portal.</p>
+        <div class="flex flex-wrap items-center gap-2 mb-3">
+          <button data-action="load-recommended" class="bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-emerald-800 font-bold py-2 px-3 rounded-xl text-xs transition flex items-center gap-1"><i data-lucide="sparkles" class="w-4 h-4"></i> Fill empty targets with recommended instructions</button>
+        </div>
 
         <select id="inst-target" class="w-full bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm mb-3 outline-none">
           <option value="global">🌐 Global (All Volunteers)</option>
+          <option value="judges">⚖️ Judges (Judge Portal)</option>
           <optgroup id="opt-roles" label="Roles / Tasks"></optgroup>
           <optgroup id="opt-captains" label="Team Captains (Volunteers)"></optgroup>
         </select>
 
-        <textarea id="instructions-input" rows="3" class="w-full bg-gray-50 border border-gray-200 rounded-xl p-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-3" placeholder="Enter instructions here..."></textarea>
+        <textarea id="instructions-input" rows="6" maxlength="2000" class="w-full bg-gray-50 border border-gray-200 rounded-xl p-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-3" placeholder="Enter instructions here..."></textarea>
         <button data-action="save-instructions" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-xl text-sm transition">Save Target Instruction</button>
 
         <div class="mt-6 border-t border-gray-100 pt-4">
@@ -202,12 +206,35 @@
         </div>
       </div>
 
+      <!-- Judge Emails Card -->
+      <div class="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 mb-6">
+        <h2 class="text-lg font-bold flex items-center gap-2 mb-2"><i data-lucide="gavel" class="text-amber-500"></i> Judge Email List</h2>
+        <p class="text-xs text-gray-500 mb-3">Paste judge emails (one per line, or separated by commas). Used only for blasts to judges. Stored encrypted.</p>
+        <textarea id="judge-emails-input" rows="4" class="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-500 mb-2" placeholder="judge1@example.com&#10;judge2@example.com"></textarea>
+        <div class="flex items-center gap-3">
+          <button data-action="save-judges" class="bg-amber-500 hover:bg-amber-600 text-white font-bold py-2 px-4 rounded-xl text-sm transition">Save Judge List</button>
+          <span id="judge-emails-count" class="text-xs text-gray-500"></span>
+        </div>
+      </div>
+
       <!-- Blast Card -->
       <div class="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 mb-6">
-        <h2 class="text-lg font-bold flex items-center gap-2 mb-4"><i data-lucide="megaphone" class="text-red-500"></i> Blast Announcements</h2>
-        <p class="text-xs text-gray-500 mb-3">Send an SMS/Email alert to all signed-up volunteers.</p>
-        <textarea id="blast-input" rows="2" class="w-full bg-gray-50 border border-gray-200 rounded-xl p-4 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 mb-3" placeholder="ATTENTION ALL VOLUNTEERS: ..."></textarea>
-        <button data-action="send-blast" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-6 rounded-xl text-sm transition shadow-sm shadow-red-200">Send Blast 🚀</button>
+        <h2 class="text-lg font-bold flex items-center gap-2 mb-2"><i data-lucide="megaphone" class="text-red-500"></i> Blast Announcements</h2>
+        <p class="text-xs text-gray-500 mb-3">Shows a live banner on the Volunteer Hub, Team page and Judge Portal, and emails the chosen audience (BCC, batches of 50).</p>
+        <p id="email-status" class="text-xs font-bold rounded-lg px-3 py-2 mb-3 bg-gray-50 border border-gray-200 text-gray-600">Checking email setup…</p>
+        <label class="block text-xs font-bold text-gray-600 mb-1" for="blast-audience">Audience</label>
+        <select id="blast-audience" class="w-full bg-gray-50 border border-gray-200 rounded-lg p-2.5 text-sm mb-3 outline-none">
+          <option value="volunteers">Volunteers</option>
+          <option value="judges">Judges</option>
+          <option value="both">Volunteers + Judges</option>
+        </select>
+        <textarea id="blast-input" rows="3" maxlength="1000" class="w-full bg-gray-50 border border-gray-200 rounded-xl p-4 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 mb-1" placeholder="e.g. Awards start in 10 minutes on the Main Stage (Rm 109+104)."></textarea>
+        <div class="text-right text-[11px] text-gray-400 mb-3"><span id="blast-count">0</span>/1000</div>
+        <div class="flex flex-wrap gap-2">
+          <button data-action="send-blast" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-6 rounded-xl text-sm transition shadow-sm shadow-red-200">Send Blast</button>
+          <button data-action="test-blast" class="bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-2 px-4 rounded-xl text-sm transition">Send test to me</button>
+        </div>
+        <p id="blast-result" class="hidden mt-3 text-sm rounded-lg px-3 py-2 border"></p>
       </div>
 
       <a href="/volunteer" target="_blank" class="text-blue-600 text-sm font-bold hover:underline">View Volunteer Hub &rarr;</a>
@@ -287,7 +314,7 @@
       <ul id="tpl-list" class="space-y-2 mb-3"></ul>
       <button data-action="add-templates" class="w-full mb-5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded-xl text-sm">Add selected</button>
       <label class="block text-xs font-bold text-gray-600">Quick add (one task per line)
-        <textarea id="tpl-lines" rows="4" placeholder="Restock lanyards at 12:00&#10;Radio check with Security" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-normal focus:ring-2 focus:ring-blue-500 focus:outline-none"></textarea>
+        <textarea id="tpl-lines" rows="4" placeholder="Restock lanyards at 12:00&#10;Check in with Security at the Main Entrance" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-normal focus:ring-2 focus:ring-blue-500 focus:outline-none"></textarea>
       </label>
       <button data-action="add-lines" class="w-full mt-2 bg-[#1e1e1e] text-white font-bold py-2 rounded-xl text-sm">Add lines as tasks</button>
     </div>
@@ -464,6 +491,8 @@
       loadVolunteers();
       loadTeams();
       loadScores();
+      loadJudges();
+      loadEmailStatus();
       connectLive();
       setInterval(loadBoard, 30000); // fallback if the live stream drops
     }
@@ -551,7 +580,7 @@
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
               <h3 class="font-black text-gray-900">${esc(role.title)}</h3>
-              <div class="text-xs text-gray-500">${role.channel ? `Radio Ch ${role.channel} · ` : ''}${role.volunteerCount} volunteer${role.volunteerCount === 1 ? '' : 's'}</div>
+              <div class="text-xs text-gray-500">${role.volunteerCount} volunteer${role.volunteerCount === 1 ? '' : 's'}</div>
             </div>
             <div class="text-right shrink-0">
               <div class="font-black text-lg leading-none">${p.done}/${p.total}</div>
@@ -812,21 +841,79 @@
           </div>`;
         let html = '';
         if (iData.global) html += item('gray', 'Global', 'global', iData.global);
+        if (iData.judges) html += item('amber', 'Judges', 'judges', iData.judges);
         for (const [rId, text] of Object.entries(iData.roles || {})) html += item('blue', 'Role: ' + roleTitle(rId), 'role_' + rId, text);
         for (const [email, text] of Object.entries(iData.captains || {})) html += item('purple', 'Captain: ' + email, 'cap_' + email, text);
         document.getElementById('current-custom-instructions').innerHTML = html || '<p class="text-sm text-gray-400">No custom instructions set yet.</p>';
         icons();
-        document.getElementById('inst-target').onchange = e => {
+        const sel = document.getElementById('inst-target');
+        sel.onchange = e => {
           const target = e.target.value;
           const ta = document.getElementById('instructions-input');
           if (target === 'global') ta.value = iData.global || '';
+          else if (target === 'judges') ta.value = iData.judges || '';
           else if (target.startsWith('role_')) ta.value = (iData.roles || {})[target.slice(5)] || '';
           else if (target.startsWith('cap_')) ta.value = (iData.captains || {})[target.slice(4)] || '';
         };
+        sel.onchange({ target: sel });
       } catch (e) {
-        console.error('instructions', e);
+        document.getElementById('current-custom-instructions').innerHTML = `<p class="text-sm text-red-500">${esc(e.message)}</p>`;
       }
     }
+
+    // ---------- judges & blast ----------
+    let emailStatus = null;
+    async function loadJudges() {
+      try {
+        const r = await api('/api/admin/judges');
+        document.getElementById('judge-emails-input').value = r.emails.join('\n');
+        document.getElementById('judge-emails-count').textContent = `${r.emails.length} judge email${r.emails.length === 1 ? '' : 's'} on file`;
+      } catch (e) { document.getElementById('judge-emails-count').textContent = e.message; }
+    }
+    async function loadEmailStatus() {
+      const el = document.getElementById('email-status');
+      try {
+        emailStatus = await api('/api/admin/email/status');
+        if (emailStatus.configured) {
+          el.className = 'text-xs font-bold rounded-lg px-3 py-2 mb-3 bg-emerald-50 border border-emerald-200 text-emerald-800';
+          el.textContent = `Email is configured. Tests go to ${emailStatus.testRecipient}.`;
+        } else {
+          el.className = 'text-xs font-bold rounded-lg px-3 py-2 mb-3 bg-amber-50 border border-amber-300 text-amber-900';
+          el.textContent = 'Email not configured — banner only. Blasts show the in-app banner but send no email until SMTP is set up.';
+        }
+      } catch (e) { el.textContent = e.message; }
+    }
+    function showBlastResult(text, kind) {
+      const el = document.getElementById('blast-result');
+      const cls = { ok: 'bg-emerald-50 border-emerald-200 text-emerald-900', warn: 'bg-amber-50 border-amber-300 text-amber-900', err: 'bg-red-50 border-red-200 text-red-800' }[kind];
+      el.className = `mt-3 text-sm rounded-lg px-3 py-2 border ${cls}`;
+      el.textContent = text;
+    }
+    async function sendBlast(btn, test) {
+      const input = document.getElementById('blast-input');
+      const message = input.value.trim();
+      const audience = document.getElementById('blast-audience').value;
+      if (!message) return toast('Type a message first', false);
+      if (message.length > 1000) return toast('Message is limited to 1000 characters', false);
+      const label = { volunteers: 'all volunteers', judges: 'all judges', both: 'all volunteers and judges' }[audience];
+      const emailNote = emailStatus && emailStatus.configured ? 'show the live banner and EMAIL' : 'show the live banner for (email is NOT configured, so no emails will go out to)';
+      if (test) {
+        if (!confirm(`Send a test email of this message to ${emailStatus ? emailStatus.testRecipient : 'you'}? No banner is shown.`)) return;
+      } else if (!confirm(`This will ${emailNote} ${label}.\n\n"${message.slice(0, 300)}"\n\nSend now?`)) return;
+      btn.disabled = true;
+      try {
+        const r = await api('/api/blast', { method: 'POST', body: { message, audience, test } });
+        if (!test) input.value = '';
+        document.getElementById('blast-count').textContent = input.value.length;
+        const counts = test ? '' : ` (emailed ${r.emailed}, failed ${r.failed}, skipped ${r.skipped})`;
+        showBlastResult(r.message + counts, !r.emailConfigured ? 'warn' : r.failed ? 'err' : 'ok');
+      } catch (e) {
+        showBlastResult(e.message, 'err');
+      } finally { btn.disabled = false; }
+    }
+    document.getElementById('blast-input').addEventListener('input', e => {
+      document.getElementById('blast-count').textContent = e.target.value.length;
+    });
 
     // ---------- actions (event delegation; no inline handlers with data in them) ----------
     const actions = {
@@ -956,7 +1043,6 @@
       'save-instructions': async () => {
         try {
           await api('/api/instructions', { method: 'POST', body: { target: document.getElementById('inst-target').value, text: document.getElementById('instructions-input').value } });
-          document.getElementById('instructions-input').value = '';
           toast('Instructions saved');
           renderInstructionTargets();
         } catch (e) { toast(e.message, false); }
@@ -965,15 +1051,25 @@
         if (!confirm('Delete this instruction?')) return;
         try { await api('/api/instructions', { method: 'POST', body: { target: el.dataset.target, text: '' } }); renderInstructionTargets(); } catch (e) { toast(e.message, false); }
       },
-      'send-blast': async () => {
-        const text = document.getElementById('blast-input').value;
-        if (!text) return;
+      'load-recommended': async el => {
+        if (!confirm('Fill every empty instruction target (all volunteers, each team, judges) with the recommended event instructions? Targets you already wrote are kept.')) return;
+        el.disabled = true;
         try {
-          await api('/api/blast', { method: 'POST', body: { message: text } });
-          document.getElementById('blast-input').value = '';
-          toast('Blast message triggered!');
+          const r = await api('/api/admin/instructions/recommended', { method: 'POST', body: {} });
+          toast(r.applied.length ? `Added ${r.applied.length} instruction${r.applied.length === 1 ? '' : 's'}` : 'All targets already have instructions');
+          renderInstructionTargets();
+        } catch (e) { toast(e.message, false); } finally { el.disabled = false; }
+      },
+      'save-judges': async () => {
+        try {
+          const r = await api('/api/admin/judges', { method: 'PUT', body: { emails: document.getElementById('judge-emails-input').value } });
+          document.getElementById('judge-emails-input').value = r.emails.join('\n');
+          document.getElementById('judge-emails-count').textContent = `${r.emails.length} judge email${r.emails.length === 1 ? '' : 's'} saved`;
+          toast('Judge list saved');
         } catch (e) { toast(e.message, false); }
-      }
+      },
+      'send-blast': el => sendBlast(el, false),
+      'test-blast': el => sendBlast(el, true)
     };
 
     document.addEventListener('click', e => {
