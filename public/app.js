@@ -98,7 +98,9 @@ function setTrackFilter(track) {
   Object.entries(pills).forEach(([key, el]) => {
     if (!el) return;
     if (key === track) {
-      el.className = 'track-pill px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition bg-googleBlue text-white whitespace-nowrap shadow-sm shadow-blue-500/20';
+      if (track === 'developer') el.className = 'track-pill px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition bg-red-500 text-white whitespace-nowrap shadow-sm shadow-red-500/20';
+      else if (track === 'builder') el.className = 'track-pill px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition bg-green-600 text-white whitespace-nowrap shadow-sm shadow-green-600/20';
+      else el.className = 'track-pill px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition bg-slate-800 text-white whitespace-nowrap shadow-sm shadow-slate-800/20';
     } else {
       el.className = 'track-pill px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition text-gray-700 hover:bg-gray-100 whitespace-nowrap';
     }
@@ -285,8 +287,8 @@ function renderLeaderboard() {
   filtered.forEach((team, index) => {
     const isDev = team.track.includes('Developer');
     const trackBadge = isDev 
-      ? `<span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-500/15 text-blue-600 border border-blue-500/25">⚡ Developer Track</span>`
-      : `<span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-yellow-500/15 text-yellow-600 border border-yellow-500/25">🎨 Builder Track</span>`;
+      ? `<span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-500/15 text-red-600 border border-red-500/25">⚡ Developer Track</span>`
+      : `<span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-green-500/15 text-green-600 border border-green-500/25">🎨 Builder Track</span>`;
 
     let rankBadge = `<span class="font-bold text-gray-600">#${team.rank || index + 1}</span>`;
     if (index === 0) rankBadge = `<span class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-amber-500/20 text-amber-700 font-bold border border-amber-500/40 text-xs">🥇 1</span>`;
@@ -391,8 +393,8 @@ function renderPodium(top3) {
     const m = meta[i];
     const isDev = team.track.includes('Developer');
     const trackBadge = isDev 
-      ? `<span class="px-2 py-0.5 rounded text-[10px] sm:text-[11px] font-semibold bg-blue-500/20 text-blue-700">⚡ Developer</span>`
-      : `<span class="px-2 py-0.5 rounded text-[10px] sm:text-[11px] font-semibold bg-yellow-500/20 text-yellow-700">🎨 Builder</span>`;
+      ? `<span class="px-2 py-0.5 rounded text-[10px] sm:text-[11px] font-semibold bg-red-500/20 text-red-700">⚡ Developer</span>`
+      : `<span class="px-2 py-0.5 rounded text-[10px] sm:text-[11px] font-semibold bg-green-500/20 text-green-700">🎨 Builder</span>`;
 
     const card = document.createElement('div');
     card.className = `rounded-2xl border ${m.color} ${m.orderClass} p-4 sm:p-5 flex flex-col justify-between cursor-pointer transition hover:scale-[1.01] active:scale-[0.99] shadow-lg`;
@@ -486,7 +488,7 @@ function showTeamDetails(teamName) {
   content.innerHTML = `
     <div>
       <div class="flex items-center space-x-2 text-xs">
-        <span class="px-2.5 py-0.5 rounded-full font-semibold ${isDev ? 'bg-blue-500/20 text-blue-600' : 'bg-yellow-500/20 text-yellow-600'}">
+        <span class="px-2.5 py-0.5 rounded-full font-semibold ${isDev ? 'bg-red-500/20 text-red-600' : 'bg-green-500/20 text-green-600'}">
           ${team.track}
         </span>
         <span class="text-gray-600 font-semibold">Rank #${team.rank || '-'}</span>
@@ -963,7 +965,7 @@ async function renderSchedule() {
     const devName = devTeams[i] ? devTeams[i].teamName : `Team ${i + 1} Demo`;
     const builderName = builderTeams[i] ? builderTeams[i].teamName : `Team ${i + 1} Demo`;
     
-    html += `<tr><td class="p-2.5 whitespace-nowrap">${timeStr}</td><td class="p-2.5 font-bold">${devName}</td><td class="p-2.5"><span class="text-blue-600">Developer Track</span><br><span class="text-[10px] text-gray-500">Breakout 3</span></td><td class="p-2.5 text-gray-700">Olivier, Ivan, Parul, Rakesh, Shubham & Peeya</td></tr>`;
+    html += `<tr><td class="p-2.5 whitespace-nowrap">${timeStr}</td><td class="p-2.5 font-bold">${devName}</td><td class="p-2.5"><span class="text-red-600">Developer Track</span><br><span class="text-[10px] text-gray-500">Breakout 3</span></td><td class="p-2.5 text-gray-700">Olivier, Ivan, Parul, Rakesh, Shubham & Peeya</td></tr>`;
     html += `<tr><td class="p-2.5 whitespace-nowrap">${timeStr}</td><td class="p-2.5 font-bold">${builderName}</td><td class="p-2.5"><span class="text-green-600">Builder Track</span><br><span class="text-[10px] text-gray-500">Expo Hall</span></td><td class="p-2.5 text-gray-700">Gretchen, Jorge, Anu, Hemanth & Lourdes</td></tr>`;
   }
   
