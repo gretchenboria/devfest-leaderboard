@@ -13,6 +13,7 @@ const { Storage } = require('@google-cloud/storage');
 
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'devving';
+const ENCRYPTION_KEY = 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4';
 const ADMIN_BEARER_TOKEN = crypto.createHash('sha256').update(ADMIN_PASSWORD).digest('hex');
 
 const app = express();
