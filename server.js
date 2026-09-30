@@ -2150,6 +2150,7 @@ module.exports = {
   start,
   getState: () => appState,
   backupToCloudStorage,
+  refreshFromCloud,
   saveToLocalDisk,
   _setBucketForTests: b => { bucket = b; lastCloudPullAt = 0; },
   _googleClient: googleClient
