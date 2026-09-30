@@ -1775,6 +1775,13 @@ function captainsOfRole(roleId) {
   return [...seen.values()];
 }
 
+// The stored assignee name is a snapshot; show the captain's current name.
+function withCurrentAssigneeName(task) {
+  if (!task.assignee) return task;
+  const cap = captainsOfRole(task.roleId).find(c => c.key === task.assignee.key);
+  return cap ? { ...task, assignee: { ...task.assignee, name: cap.name } } : task;
+}
+
 function resolveAssignee(roleId, key) {
   if (!key) return null;
   const cap = captainsOfRole(roleId).find(c => c.key === key);
@@ -1858,7 +1865,7 @@ app.get('/api/admin/tasks', requireAdmin, async (req, res) => {
         volunteerCount: new Set(appState.claims.filter(c => c.taskId === role.id).map(c => claimPersonKey(c) || c.timestamp)).size,
         progress: progressOf(tasks),
         templates: { total: templates.length, available: templates.filter(t => t.state === 'available').length },
-        tasks: tasks.map(publicTask)
+        tasks: tasks.map(t => withCurrentAssigneeName(publicTask(t)))
       };
     });
     res.json({ roles: out, totals: progressOf(all), serverTime: Date.now() });
@@ -2005,7 +2012,7 @@ app.get('/api/team/tasks', requireMember, async (req, res) => {
         progress: progressOf(tasks),
         // Person keys stay server-side; clients only learn "is this mine".
         tasks: tasks.map(t => {
-          const { assignee, ...rest } = publicTask(t);
+          const { assignee, ...rest } = withCurrentAssigneeName(publicTask(t));
           return { ...rest, assignee: assignee ? { name: assignee.name, mine: assignee.key === myKey } : null };
         })
       };

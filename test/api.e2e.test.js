@@ -229,6 +229,13 @@ test('admin can edit anyone and link a different Google sign-in email', async ()
   const asDee = await call('GET', '/api/team/me', undefined, sign.sign({ email: 'dee.google@gmail.com', role: 'volunteer' }));
   assert.equal(asDee.status, 200);
   assert.equal(asDee.body.profile.lastName, 'Park-Lee');
+
+  // Renaming a captain updates the name shown on tasks assigned to her.
+  const r2 = await call('PATCH', `/api/admin/people/${ids.anaKey}`, { firstName: 'Anabel' }, tokens.admin);
+  assert.equal(r2.status, 200);
+  assert.equal(r2.body.personKey, ids.anaKey, 'person key stable when only the name changes');
+  const reg = (await call('GET', '/api/admin/tasks', undefined, tokens.admin)).body.roles.find(r => r.id === ROLES.registration);
+  assert.equal(reg.tasks.find(t => t.id === ids.regTask).assignee.name, 'Anabel L.');
 });
 
 test('removed admin\'s existing token is rejected immediately', async () => {

@@ -52,7 +52,8 @@ function spawnServer(env) {
     const timer = setTimeout(() => reject(new Error(`server did not start:\n${log}`)), 15000);
     const onData = d => {
       log += d.toString();
-      if (log.includes(`Running on http://localhost:${port}`)) {
+      // Wait for the end of the startup banner (printed after listen()).
+      if (log.includes(`Running on http://localhost:${port}`) && log.includes('Google Sheet Source')) {
         clearTimeout(timer);
         resolve({ child, base: `http://127.0.0.1:${port}`, log: () => log, stop: () => stopChild(child) });
       }
