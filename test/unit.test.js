@@ -69,7 +69,8 @@ test('same field edited on both sides: the later write wins', async () => {
   const a = clone(base);
   const b = clone(base);
   T.applyUpdate(a, { status: 'in_progress' }, 'x');
-  await sleep(2);
+  // Timers and Date.now() use different clocks: wait until b's stamp is strictly later.
+  while (Date.now() <= a.updatedAt) await sleep(1);
   T.applyUpdate(b, { status: 'blocked' }, 'y');
   assert.equal(T.mergeTask(a, b).status, 'blocked');
   assert.equal(T.mergeTask(b, a).status, 'blocked');

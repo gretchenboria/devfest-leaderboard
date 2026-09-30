@@ -14,6 +14,7 @@ const { mergeRemoteState, normalizeInstructions } = require('./lib/stateMerge');
 const { recommendedInstructions, VENUE_NOTES } = require('./lib/eventInstructions');
 const { createSessionSigner, bearerToken } = require('./lib/session');
 const { normalizePhone, chunk } = require('./lib/phone');
+const { normalizeStoredText, textToHtml, escapeHtml, maskEmail } = require('./lib/textFormat');
 const {
   TaskError, LIMITS: TASK_LIMITS, normalizeFields, cleanStatus, cleanNote, createTask, applyUpdate, addNote,
   makeTombstone, liveTasks, compareTasks, publicTask, progressOf
@@ -1002,7 +1003,7 @@ app.get('/api/volunteer/tasks', async (req, res) => {
       if (kind) t.venueInstructions = VENUE_NOTES[kind];
 
       if (appState.roleInstructions && appState.roleInstructions[t.id]) {
-        t.venueInstructions = (t.venueInstructions ? t.venueInstructions + "\n\n" : "") + "📌 **Admin Update:** " + appState.roleInstructions[t.id];
+        t.venueInstructions = (t.venueInstructions ? t.venueInstructions + "\n\n" : "") + "📌 **Admin Update:** " + displayText(appState.roleInstructions[t.id]);
       }
     });
 
@@ -1026,135 +1027,108 @@ app.get('/api/volunteer/tasks', async (req, res) => {
 // Save minimal PII securely
 
 
-async function notifyVolunteerOfSignup(volunteerEmail, firstName, taskId) {
-  const { SMTP_USER, SMTP_PASS } = process.env;
-  if (!SMTP_USER || !SMTP_PASS) {
-    console.log("Volunteer email skipped: SMTP credentials not configured");
-    return;
-  }
-  
-  try {
-    // Fetch task from Wrike to get title and description
-    const url = `https://www.wrike.com/api/v4/tasks/${taskId}?fields=['description']`;
-    const wRes = await fetch(url, { headers: { 'Authorization': `bearer ${WRIKE_TOKEN}` } });
-    const wData = await wRes.json();
-    let taskTitle = "Volunteer Task";
-    let taskDesc = "";
-    if (wData && wData.data && wData.data.length > 0) {
-      taskTitle = wData.data[0].title.replace('\[Volunteer\]', '').replace(/Recruit for:?\s*/i, '').trim();
-      taskDesc = (wData.data[0].description || '').replace(/<[^>]+>/g, ' ').trim();
-    }
-
-    // Determine venue instructions
-    const kind = roleKind(taskTitle);
-    let venueInstructions = kind ? VENUE_NOTES[kind].replace(/\*\*/g, '') : '';
-
-    const transporter = getMailer();
-
-    let htmlContent = `
-      <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
-        <h2 style="color: #4285F4;">You're officially on the roster, ${firstName}! 🎉</h2>
+// Confirmation email to a volunteer. Role title and venue notes come from the
+// same role list the Volunteer Hub shows (Wrike, or the built-in fallback), and
+// every piece of organizer text is escaped once with line breaks kept.
+function buildVolunteerConfirmationEmail({ firstName, roleTitle, roleDescription, venueNote, roleNote, globalNote }) {
+  const box = (bg, border, color, title, body) => `
+        <div style="background-color:${bg};padding:16px 20px;border-radius:8px;margin:20px 0;border:1px solid ${border};">
+          <h4 style="margin:0 0 8px;color:${color};">${escapeHtml(title)}</h4>
+          <div style="font-size:14px;line-height:1.5;color:${color};">${body}</div>
+        </div>`;
+  let html = `
+      <div style="font-family:sans-serif;max-width:600px;margin:0 auto;color:#333;">
+        <h2 style="color:#4285F4;">You're officially on the roster, ${escapeHtml(firstName || 'volunteer')}! 🎉</h2>
         <p>Thank you so much for signing up to help at DevFest Bay Area 2026. Here are the details for your assignment:</p>
-        
-        <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #e0e0e0;">
-          <h3 style="margin-top: 0; color: #202124;">${taskTitle}</h3>
-          <p style="font-size: 14px; color: #5f6368;">${taskDesc}</p>
-        </div>
-    `;
-
-    if (venueInstructions) {
-      htmlContent += `
-        <div style="background-color: #e8f0fe; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #d2e3fc;">
-          <h4 style="margin-top: 0; color: #174ea6; margin-bottom: 8px;">Important Venue Instructions</h4>
-          <p style="font-size: 14px; color: #174ea6; margin: 0;">${venueInstructions}</p>
-        </div>
-      `;
-    }
-
-
-    if (appState.roleInstructions && appState.roleInstructions[taskId]) {
-      venueInstructions = (venueInstructions ? venueInstructions + "<br><br>" : "") + "📌 <b>Admin Update:</b> " + appState.roleInstructions[taskId];
-    }
-    if (appState.volunteerInstructions) {
-      htmlContent += `
-        <div style="margin-top: 30px;">
-          <h4 style="color: #202124;">General Organizer Instructions:</h4>
-          <div style="font-size: 14px; color: #3c4043;">
-            ${escapeHtml(appState.volunteerInstructions).replace(/\n/g, '<br>')}
-          </div>
-        </div>
-      `;
-    }
-
-    htmlContent += `
-        <p style="margin-top: 30px; font-size: 14px; color: #5f6368;">
+        <div style="background-color:#f8f9fa;padding:20px;border-radius:8px;margin:20px 0;border:1px solid #e0e0e0;">
+          <h3 style="margin-top:0;color:#202124;">${escapeHtml(roleTitle)}</h3>
+          ${roleDescription ? `<div style="font-size:14px;line-height:1.5;color:#5f6368;">${textToHtml(roleDescription)}</div>` : ''}
+        </div>`;
+  if (venueNote) html += box('#e8f0fe', '#d2e3fc', '#174ea6', 'Important Venue Instructions', textToHtml(venueNote));
+  if (roleNote) html += box('#e6f4ea', '#ceead6', '#137333', 'Update for your team', textToHtml(roleNote, { decrypt: safeDecrypt }));
+  if (globalNote) html += box('#f8f9fa', '#e0e0e0', '#3c4043', 'General Organizer Instructions', textToHtml(globalNote, { decrypt: safeDecrypt }));
+  html += `
+        <p style="margin-top:30px;font-size:14px;color:#5f6368;">
           If you need to update your phone number, you can simply sign up again on the Volunteer Hub using the same email address.<br>
           See you at Circuit Launch!
         </p>
-      </div>
-    `;
+      </div>`;
+  return { subject: 'Your DevFest Volunteer Assignment: ' + roleTitle, html };
+}
 
-    await transporter.sendMail({
-      from: '"DevFest 2026 Organizing Team" <' + SMTP_USER + '>',
-      to: volunteerEmail,
-      subject: 'Your DevFest Volunteer Assignment: ' + taskTitle,
-      html: htmlContent
+async function notifyVolunteerOfSignup(volunteerEmail, firstName, taskId) {
+  const transporter = getMailer();
+  if (!transporter) {
+    console.log("Volunteer email skipped: SMTP credentials not configured");
+    return;
+  }
+  try {
+    const role = (await getRoles()).find(r => r.id === taskId) || {};
+    const roleTitle = role.title || 'Volunteer Task';
+    const kind = roleKind(roleTitle);
+    const mail = buildVolunteerConfirmationEmail({
+      firstName,
+      roleTitle,
+      roleDescription: role.description || '',
+      venueNote: kind ? VENUE_NOTES[kind] : '',
+      roleNote: (appState.roleInstructions || {})[taskId] || '',
+      globalNote: appState.volunteerInstructions || ''
     });
-    console.log("Sent confirmation email to volunteer:", volunteerEmail);
-  } catch(e) {
-    console.error("Failed to send volunteer email:", e);
+    await transporter.sendMail({ from: mailFrom(), to: volunteerEmail, ...mail });
+    console.log("Sent confirmation email to volunteer:", maskEmail(volunteerEmail));
+  } catch (e) {
+    console.error("Failed to send volunteer email:", e.message);
   }
 }
 
+// Roster table for the admin "new sign-up" email. Names come from the same
+// profile fields the admin page uses: firstName + decrypted lastNameData, or
+// the legacy "First L." displayName for records created before those fields.
+function rosterRows(claims, titleOf = id => id) {
+  return claims.map(c => {
+    const p = claimProfile(c);
+    const legacy = splitLegacyName(c.displayName);
+    const first = p.firstName || legacy.first || '';
+    const last = p.lastName || legacy.last || '';
+    return {
+      role: titleOf(c.taskId) || c.taskId || '',
+      firstName: first,
+      lastName: last,
+      name: [first, last].filter(Boolean).join(' ') || c.displayName || '(no name)',
+      email: p.email,
+      phone: p.phone,
+      isCaptain: !!c.isCaptain
+    };
+  });
+}
+
+function buildRosterEmail(rows) {
+  const cell = v => `<td>${escapeHtml(v)}</td>`;
+  let html = `<h2 style="color:#4285F4;">DevFest Volunteer Update 🚀</h2>
+    <p>A new volunteer just signed up! Here is the complete list of all active sign-ups (${rows.length}):</p>
+    <table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;">
+      <tr style="background-color:#f3f3f3;"><th>Role</th><th>First Name</th><th>Last Name</th><th>Email</th><th>Phone</th></tr>`;
+  for (const r of rows) {
+    html += `<tr>${cell(r.role + (r.isCaptain ? ' (captain)' : ''))}${cell(r.firstName || r.name)}${cell(r.lastName)}`
+      + `<td>${r.email ? `<a href="mailto:${escapeHtml(r.email)}">${escapeHtml(r.email)}</a>` : '(could not decrypt)'}</td>${cell(r.phone || 'N/A')}</tr>`;
+  }
+  html += `</table><p>Log in to your Admin Portal to send blast announcements!</p>`;
+  return { subject: 'New Volunteer Signup! 🚀', html };
+}
+
 async function notifyAdminOfSignup() {
-  const { SMTP_USER, SMTP_PASS, ADMIN_EMAIL } = process.env;
-  if (!SMTP_USER || !SMTP_PASS || !ADMIN_EMAIL) {
+  const transporter = getMailer();
+  if (!transporter || !process.env.ADMIN_EMAIL) {
     console.log("Email notification skipped: SMTP_USER, SMTP_PASS, or ADMIN_EMAIL not configured in .env");
     return;
   }
-
   try {
-    const transporter = getMailer();
-
-    const claims = appState.claims || [];
-    let htmlContent = `<h2 style="color: #4285F4;">DevFest Volunteer Update 🚀</h2>
-                       <p>A new volunteer just signed up! Here is the complete list of all active sign-ups:</p>
-                       <table border="1" cellpadding="8" style="border-collapse: collapse; width: 100%;">
-                         <tr style="background-color: #f3f3f3;">
-                           <th>Task ID</th><th>First Name</th><th>Last Initial</th><th>Email</th><th>Phone</th>
-                         </tr>`;
-
-    claims.forEach(c => {
-      // Decrypt the email for the admin
-      let decryptedEmail = "Error decrypting";
-      let decryptedPhone = "N/A";
-      try {
-        decryptedEmail = decryptField(c.emailData);
-        if (c.phoneData) decryptedPhone = decryptField(c.phoneData);
-      } catch (e) {
-        console.error("Decryption failed for email", e);
-      }
-
-      htmlContent += `<tr>
-        <td>${c.taskId}</td>
-        <td>${c.firstName}</td>
-        <td>${c.lastInitial}</td>
-        <td><a href="mailto:${decryptedEmail}">${decryptedEmail}</a></td>
-        <td>${decryptedPhone}</td>
-      </tr>`;
-    });
-
-    htmlContent += `</table><p>Log in to your Admin Portal to send blast announcements!</p>`;
-
-    await transporter.sendMail({
-      from: `"DevFest Leaderboard" <${SMTP_USER}>`,
-      to: ADMIN_EMAIL,
-      subject: "New Volunteer Signup! 🚀",
-      html: htmlContent
-    });
+    const titleOf = roleTitleMap(await getRoles());
+    const mail = buildRosterEmail(rosterRows(appState.claims || [], titleOf));
+    await transporter.sendMail({ from: mailFrom(), to: process.env.ADMIN_EMAIL, ...mail });
     console.log("Admin notification email sent successfully.");
   } catch (error) {
-    console.error("Failed to send admin email:", error);
+    console.error("Failed to send admin email:", error.message);
   }
 }
 
@@ -1189,6 +1163,18 @@ function safeDecrypt(data) {
   } catch (e) {
     return '';
   }
+}
+
+// Organizer text as it should be displayed: repairs double-escaped entities,
+// mojibake, literal "\n" and accidentally encrypted values on read. Stored
+// data is never rewritten.
+function displayText(v) {
+  return normalizeStoredText(v, { decrypt: safeDecrypt });
+}
+function displayTextMap(obj) {
+  const out = {};
+  for (const [k, v] of Object.entries(obj || {})) out[k] = displayText(v);
+  return out;
 }
 
 // Stable, non-reversible id for a person (keyed HMAC of the identity email).
@@ -1465,7 +1451,7 @@ app.post('/api/auth', (req, res) => {
 });
 
 app.get('/api/instructions', (req, res) => {
-  res.json({ text: appState.volunteerInstructions });
+  res.json({ text: displayText(appState.volunteerInstructions) });
 });
 
 
@@ -1640,7 +1626,7 @@ app.get('/api/team/me', requireMember, async (req, res) => {
     }
     const roleNotes = {};
     for (const c of claims) {
-      if (appState.roleInstructions && appState.roleInstructions[c.taskId]) roleNotes[c.taskId] = appState.roleInstructions[c.taskId];
+      if (appState.roleInstructions && appState.roleInstructions[c.taskId]) roleNotes[c.taskId] = displayText(appState.roleInstructions[c.taskId]);
     }
     res.json({
       signedInAs: req.session.email,
@@ -1654,9 +1640,9 @@ app.get('/api/team/me', requireMember, async (req, res) => {
       },
       assignments: claims.map(c => ({ roleId: c.taskId, roleTitle: titleOf(c.taskId), isCaptain: !!c.isCaptain })),
       instructions: {
-        global: appState.volunteerInstructions || '',
+        global: displayText(appState.volunteerInstructions),
         roles: roleNotes,
-        captain: claims.some(c => c.isCaptain) ? captainNote : ''
+        captain: claims.some(c => c.isCaptain) ? displayText(captainNote) : ''
       }
     });
   } catch (err) {
@@ -2061,17 +2047,17 @@ app.post('/api/instructions', requireAdmin, async (req, res) => {
 app.get('/api/instructions/all', requireAdmin, async (req, res) => {
   await refreshFromCloud();
   res.json({
-    global: appState.volunteerInstructions || '',
-    judges: appState.judgeInstructions || '',
-    roles: appState.roleInstructions || {},
-    captains: appState.captainInstructions || {}
+    global: displayText(appState.volunteerInstructions),
+    judges: displayText(appState.judgeInstructions),
+    roles: displayTextMap(appState.roleInstructions),
+    captains: displayTextMap(appState.captainInstructions)
   });
 });
 
 // Instructions for the judge portal (not secret: schedule and room info).
 app.get('/api/judge/instructions', async (req, res) => {
   await refreshFromCloud();
-  res.json({ text: appState.judgeInstructions || '' });
+  res.json({ text: displayText(appState.judgeInstructions) });
 });
 
 // Fills every target with the recommended text from lib/eventInstructions.js.
@@ -2155,7 +2141,11 @@ const BLAST_MAX_CHARS = 1000;
 const BLAST_BATCH_SIZE = 50;           // recipients per message (BCC)
 const BLAST_MAX_RECIPIENTS = 450;      // stay under Gmail's ~500/day sending limit
 const BLAST_BATCH_DELAY_MS = Number(process.env.BLAST_BATCH_DELAY_MS || 1500);
-const BLAST_AUDIENCES = ['volunteers', 'judges', 'both'];
+// "volunteers" and "both" include the organizers (the admin list): they run
+// the event, and most of them have no volunteer sign-up of their own.
+const BLAST_AUDIENCES = ['volunteers', 'judges', 'both', 'organizers'];
+const SMS_AUDIENCES = ['volunteers', 'judges', 'both'];
+let lastBlastReport = null; // masked delivery report of the latest real blast (admin only)
 
 let mailTransportOverride = null;
 function emailConfigured() {
@@ -2170,23 +2160,45 @@ function mailFrom() {
   return `"DevFest Bay Area 2026 Organizers" <${process.env.SMTP_USER || 'devfest@localhost'}>`;
 }
 
-function escapeHtml(v) {
-  return String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function organizerEmailList() {
+  const out = [...(appState.allowedAdmins || [])];
+  if (process.env.ADMIN_EMAIL) out.push(process.env.ADMIN_EMAIL);
+  return out.map(e => String(e || '').trim().toLowerCase()).filter(Boolean);
 }
 
-function volunteerEmailList() {
-  const out = [];
-  let undecryptable = 0;
-  for (const c of appState.claims) {
-    const email = safeDecrypt(c.emailData).trim().toLowerCase();
-    if (email && EMAIL_RE.test(email)) out.push(email);
-    else undecryptable++;
+// Everyone a blast should reach, one entry per person (Gmail dot/plus aliases
+// of one inbox count once), plus a reason for each sign-up that cannot be
+// emailed. Report entries only carry masked emails.
+function blastRecipients(audience, titleOf = id => id) {
+  const recipients = [];
+  const skipped = [];
+  const seen = new Set();
+  const counts = { volunteers: 0, organizers: 0, judges: 0, duplicates: 0 };
+  const add = (email, group) => {
+    const e = String(email || '').trim().toLowerCase();
+    if (!e || e.length > 254 || !EMAIL_RE.test(e)) { skipped.push({ who: maskEmail(e) || group, reason: 'not a valid email address' }); return; }
+    const key = normalizeEmail(e);
+    if (seen.has(key)) { counts.duplicates++; return; }
+    seen.add(key);
+    recipients.push(e);
+    counts[group]++;
+  };
+  if (audience === 'volunteers' || audience === 'both') {
+    for (const c of appState.claims || []) {
+      // Contact email first; the sign-in email stands in if it is missing or unreadable.
+      const email = safeDecrypt(c.emailData).trim() || safeDecrypt(c.identityData).trim();
+      if (email) { add(email, 'volunteers'); continue; }
+      skipped.push({ who: `sign-up "${c.displayName || '?'}" (${titleOf(c.taskId) || c.taskId})`,
+        reason: c.emailData || c.identityData ? 'email could not be decrypted' : 'no email on file' });
+    }
   }
-  return { emails: out, undecryptable };
+  if (audience !== 'judges') for (const e of organizerEmailList()) add(e, 'organizers');
+  if (audience === 'judges' || audience === 'both') for (const e of judgeEmailList()) add(e, 'judges');
+  return { recipients, skipped, counts };
 }
 
 function blastEmail(message, audience) {
-  const who = audience === 'judges' ? 'judges' : audience === 'volunteers' ? 'volunteers' : 'volunteers and judges';
+  const who = { judges: 'judges', volunteers: 'volunteers and organizers', organizers: 'organizers', both: 'volunteers, organizers and judges' }[audience] || 'volunteers and judges';
   return {
     subject: 'DevFest Bay Area 2026: organizer announcement',
     text: `${message}\n\n— DevFest Bay Area 2026 organizers (sent to ${who})`,
@@ -2198,24 +2210,40 @@ function blastEmail(message, audience) {
   };
 }
 
+// Sends in BCC batches. Returns per-recipient failures: a batch that throws
+// fails all its recipients; addresses Gmail refuses (info.rejected) fail alone.
+// The sender's own address is the To: of every batch, so it is not BCC'd again
+// (Gmail files mail you send to yourself under Sent / All Mail, not the inbox).
 async function sendInBatches(recipients, mail) {
   const transport = getMailer();
+  const sender = String(process.env.SMTP_USER || '').trim().toLowerCase();
+  const bccList = recipients.filter(r => !sender || normalizeEmail(r) !== normalizeEmail(sender));
+  const senderIncluded = bccList.length !== recipients.length;
   let emailed = 0;
-  let failed = 0;
+  const failures = [];
   const errors = [];
-  for (let i = 0; i < recipients.length; i += BLAST_BATCH_SIZE) {
-    const batch = recipients.slice(i, i + BLAST_BATCH_SIZE);
+  const batches = chunk(bccList, BLAST_BATCH_SIZE);
+  if (!batches.length && senderIncluded) batches.push([]);
+  for (let i = 0; i < batches.length; i++) {
+    const batch = batches[i];
     if (i > 0 && BLAST_BATCH_DELAY_MS > 0) await new Promise(r => setTimeout(r, BLAST_BATCH_DELAY_MS));
     try {
-      await transport.sendMail({ from: mailFrom(), to: process.env.SMTP_USER || undefined, bcc: batch, ...mail });
-      emailed += batch.length;
+      const info = await transport.sendMail({ from: mailFrom(), to: process.env.SMTP_USER || undefined, bcc: batch.length ? batch : undefined, ...mail });
+      const rejected = new Set(((info && info.rejected) || []).map(r => String((r && r.address) || r).toLowerCase()));
+      const reasons = new Map(((info && info.rejectedErrors) || []).map(e => [String(e.recipient || '').toLowerCase(), e.response || e.message]));
+      for (const r of batch) {
+        if (rejected.has(r)) failures.push({ email: r, reason: 'rejected by Gmail: ' + (reasons.get(r) || 'recipient refused') });
+        else emailed++;
+      }
+      if (i === 0 && senderIncluded) emailed++;
     } catch (err) {
-      failed += batch.length;
+      for (const r of batch) failures.push({ email: r, reason: 'send failed: ' + err.message });
+      if (i === 0 && senderIncluded) failures.push({ email: sender, reason: 'send failed: ' + err.message });
       errors.push(err.message);
       console.error('[Blast] Batch failed:', err.message);
     }
   }
-  return { emailed, failed, errors };
+  return { emailed, failed: failures.length, failures, errors };
 }
 
 app.post('/api/blast', requireAdmin, async (req, res) => {
@@ -2226,7 +2254,7 @@ app.post('/api/blast', requireAdmin, async (req, res) => {
     const test = !!body.test;
     if (!message) return res.status(400).json({ error: 'Message cannot be empty' });
     if (message.length > BLAST_MAX_CHARS) return res.status(400).json({ error: `Message is limited to ${BLAST_MAX_CHARS} characters` });
-    if (!BLAST_AUDIENCES.includes(audience)) return res.status(400).json({ error: 'Audience must be volunteers, judges or both' });
+    if (!BLAST_AUDIENCES.includes(audience)) return res.status(400).json({ error: 'Audience must be volunteers, organizers, judges or both' });
 
     const configured = emailConfigured();
     const mail = blastEmail(message, audience);
@@ -2242,40 +2270,58 @@ app.post('/api/blast', requireAdmin, async (req, res) => {
     }
 
     await refreshFromCloud();
-    let recipients = [];
-    let skipped = 0;
-    if (audience !== 'judges') {
-      const v = volunteerEmailList();
-      recipients.push(...v.emails);
-      skipped += v.undecryptable;
-    }
-    if (audience !== 'volunteers') recipients.push(...judgeEmailList());
-    const before = recipients.length;
-    recipients = [...new Set(recipients)];
-    const duplicates = before - recipients.length;
+    const titleOf = roleTitleMap(await getRoles());
+    const plan = blastRecipients(audience, titleOf);
+    let recipients = plan.recipients;
+    const skippedList = [...plan.skipped];
     if (recipients.length > BLAST_MAX_RECIPIENTS) {
-      skipped += recipients.length - BLAST_MAX_RECIPIENTS;
+      for (const e of recipients.slice(BLAST_MAX_RECIPIENTS)) skippedList.push({ who: maskEmail(e), reason: `over the ${BLAST_MAX_RECIPIENTS}-recipient daily limit` });
       recipients = recipients.slice(0, BLAST_MAX_RECIPIENTS);
     }
+    const duplicates = plan.counts.duplicates;
 
     // Live banner first, so it goes out even if email is slow or fails.
     const at = Math.max(Date.now(), ((appState.lastBlast && appState.lastBlast.at) || 0) + 1);
     appState.lastBlast = { id: `${at}`, message, audience, at };
     broadcastEvent('blast', appState.lastBlast);
     await persist();
-    console.log(`[Blast] ${audience}: banner sent; ${recipients.length} email recipient(s)`);
+
+    let r = { emailed: 0, failed: 0, failures: [], errors: [] };
+    if (configured) r = await sendInBatches(recipients, mail);
+    else for (const e of recipients) skippedList.push({ who: maskEmail(e), reason: 'email not configured (banner only)' });
+
+    const report = {
+      id: `${at}`, at, audience, by: maskEmail(req.session.email), emailConfigured: configured,
+      counts: {
+        intended: recipients.length + plan.skipped.length, emailed: r.emailed, failed: r.failed, skipped: skippedList.length, duplicates,
+        volunteers: plan.counts.volunteers, organizers: plan.counts.organizers, judges: plan.counts.judges
+      },
+      failed: r.failures.map(f => ({ who: maskEmail(f.email), reason: f.reason })),
+      skipped: skippedList
+    };
+    lastBlastReport = report;
+    const c = report.counts;
+    console.log(`[Blast] ${audience}: banner sent; emailed ${c.emailed}, failed ${c.failed}, skipped ${c.skipped}, duplicates ${duplicates} `
+      + `(volunteers ${c.volunteers}, organizers ${c.organizers}, judges ${c.judges})`);
+    for (const f of report.failed) console.log(`[Blast] failed ${f.who}: ${f.reason}`);
+    for (const k of report.skipped) console.log(`[Blast] skipped ${k.who}: ${k.reason}`);
 
     if (!configured) {
-      return res.json({ success: true, banner: true, emailConfigured: false, emailed: 0, failed: 0, skipped: skipped + recipients.length, duplicates,
-        recipients: recipients.length, message: 'Email not configured — banner only.' });
+      return res.json({ success: true, banner: true, emailConfigured: false, emailed: 0, failed: 0, skipped: c.skipped, duplicates,
+        recipients: recipients.length, report, message: 'Email not configured — banner only.' });
     }
-    const r = await sendInBatches(recipients, mail);
-    res.json({ success: r.failed === 0, banner: true, emailConfigured: true, emailed: r.emailed, failed: r.failed, skipped, duplicates,
-      recipients: recipients.length, errors: r.errors,
-      message: `Banner sent. Emailed ${r.emailed}` + (r.failed ? `, ${r.failed} failed` : '') + (skipped ? `, ${skipped} skipped` : '') + '.' });
+    res.json({ success: r.failed === 0, banner: true, emailConfigured: true, emailed: r.emailed, failed: r.failed, skipped: c.skipped, duplicates,
+      recipients: recipients.length, errors: r.errors, report,
+      message: `Banner sent. Emailed ${r.emailed}` + (r.failed ? `, ${r.failed} failed` : '') + (c.skipped ? `, ${c.skipped} skipped` : '') + '.' });
   } catch (err) {
     sendError(res, err);
   }
+});
+
+// Delivery report of the latest real blast sent through this instance.
+app.get('/api/admin/blast/report', requireAdmin, (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({ report: lastBlastReport });
 });
 
 // Latest blast for the in-app banner (pages poll this as a fallback to SSE).
@@ -2294,7 +2340,7 @@ const SMS_GROUP_SIZE = 20;
 app.get('/api/admin/sms/recipients', requireAdmin, async (req, res) => {
   try {
     const audience = req.query.audience === undefined ? 'volunteers' : String(req.query.audience);
-    if (!BLAST_AUDIENCES.includes(audience)) return res.status(400).json({ error: 'Audience must be volunteers, judges or both' });
+    if (!SMS_AUDIENCES.includes(audience)) return res.status(400).json({ error: 'Audience must be volunteers, judges or both' });
     res.set('Cache-Control', 'no-store');
     const numbers = [];
     const counts = { signups: 0, missing: 0, invalid: 0, duplicates: 0, numbers: 0, groups: 0 };
@@ -2315,6 +2361,12 @@ app.get('/api/admin/sms/recipients', requireAdmin, async (req, res) => {
     const groups = chunk(numbers, SMS_GROUP_SIZE);
     counts.numbers = numbers.length;
     counts.groups = groups.length;
+    // Organizers without a volunteer sign-up have no phone number on file, so a
+    // group text never reaches them; the admin page says so.
+    counts.organizersWithoutPhone = [...new Set(organizerEmailList())].filter(e => !appState.claims.some(c => {
+      const ce = (safeDecrypt(c.identityData) || safeDecrypt(c.emailData)).toLowerCase();
+      return ce && normalizeEmail(ce) === normalizeEmail(e);
+    })).length;
     res.json({ success: true, audience, groupSize: SMS_GROUP_SIZE, numbers, groups, counts,
       judgesEmailOnly: audience !== 'volunteers' });
   } catch (err) {
@@ -2380,5 +2432,6 @@ module.exports = {
   saveToLocalDisk,
   _setBucketForTests: b => { bucket = b; lastCloudPullAt = 0; },
   _setMailTransportForTests: t => { mailTransportOverride = t; },
+  _email: { buildRosterEmail, rosterRows, buildVolunteerConfirmationEmail, blastRecipients },
   _googleClient: googleClient
 };

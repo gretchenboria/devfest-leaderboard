@@ -228,9 +228,10 @@
         <p id="email-status" class="text-xs font-bold rounded-lg px-3 py-2 mb-3 bg-gray-50 border border-gray-200 text-gray-600">Checking email setup…</p>
         <label class="block text-xs font-bold text-gray-600 mb-1" for="blast-audience">Audience</label>
         <select id="blast-audience" class="w-full bg-gray-50 border border-gray-200 rounded-lg p-2.5 text-sm mb-3 outline-none">
-          <option value="volunteers">Volunteers</option>
+          <option value="volunteers">Volunteers + organizers</option>
+          <option value="organizers">Organizers only (admin list)</option>
           <option value="judges">Judges</option>
-          <option value="both">Volunteers + Judges</option>
+          <option value="both">Volunteers + organizers + judges</option>
         </select>
         <textarea id="blast-input" rows="3" maxlength="1000" class="w-full bg-gray-50 border border-gray-200 rounded-xl p-4 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 mb-1" placeholder="e.g. Awards start in 10 minutes on the Main Stage (Rm 109+104)."></textarea>
         <div class="text-right text-[11px] text-gray-400 mb-3"><span id="blast-count">0</span>/1000</div>
@@ -240,6 +241,7 @@
           <a href="#sms-card" class="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-xl text-sm transition"><i data-lucide="smartphone" class="w-4 h-4"></i> Text from my phone &darr;</a>
         </div>
         <p id="blast-result" class="hidden mt-3 text-sm rounded-lg px-3 py-2 border"></p>
+        <div id="blast-report" class="hidden mt-3 text-sm rounded-xl border border-gray-200 bg-gray-50 p-3" aria-live="polite"></div>
       </div>
 
       <!-- Send by text message (volunteers only) -->
@@ -542,7 +544,7 @@
       loadTeams();
       loadScores();
       loadJudges();
-      loadEmailStatus();
+      loadEmailStatus(); loadBlastReport();
       loadSmsRecipients();
       connectLive();
       setInterval(loadBoard, 30000); // fallback if the live stream drops
@@ -946,7 +948,7 @@
       const audience = document.getElementById('blast-audience').value;
       if (!message) return toast('Type a message first', false);
       if (message.length > 1000) return toast('Message is limited to 1000 characters', false);
-      const label = { volunteers: 'all volunteers', judges: 'all judges', both: 'all volunteers and judges' }[audience];
+      const label = { volunteers: 'all volunteers and organizers', organizers: 'the organizers (admin list)', judges: 'all judges', both: 'all volunteers, organizers and judges' }[audience];
       const emailNote = emailStatus && emailStatus.configured ? 'show the live banner and EMAIL' : 'show the live banner for (email is NOT configured, so no emails will go out to)';
       if (test) {
         if (!confirm(`Send a test email of this message to ${emailStatus ? emailStatus.testRecipient : 'you'}? No banner is shown.`)) return;
@@ -958,9 +960,46 @@
         document.getElementById('blast-count').textContent = input.value.length;
         const counts = test ? '' : ` (emailed ${r.emailed}, failed ${r.failed}, skipped ${r.skipped})`;
         showBlastResult(r.message + counts, !r.emailConfigured ? 'warn' : r.failed ? 'err' : 'ok');
+        if (!test && r.report) renderBlastReport(r.report);
       } catch (e) {
         showBlastResult(e.message, 'err');
       } finally { btn.disabled = false; }
+    }
+    // Per-blast delivery report: counts plus masked recipients that failed or
+    // were skipped, with the reason. Built with DOM text nodes only.
+    function renderBlastReport(rep) {
+      const box = document.getElementById('blast-report');
+      box.replaceChildren();
+      if (!rep) { box.classList.add('hidden'); return; }
+      const c = rep.counts || {};
+      const h = document.createElement('div');
+      h.className = 'font-bold text-gray-800 mb-1';
+      h.textContent = `Delivery report · ${new Date(rep.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · ${rep.audience}`;
+      const grid = document.createElement('div');
+      grid.className = 'grid grid-cols-2 sm:grid-cols-4 gap-2 my-2';
+      for (const [label, n, cls] of [['Emailed', c.emailed, 'text-emerald-700'], ['Failed', c.failed, 'text-red-700'], ['Skipped', c.skipped, 'text-amber-700'], ['Duplicates merged', c.duplicates, 'text-gray-600']]) {
+        const cell = document.createElement('div');
+        cell.className = 'bg-white rounded-lg border border-gray-200 px-2 py-1.5 text-center';
+        const num = document.createElement('div'); num.className = `text-xl font-extrabold ${cls}`; num.textContent = String(n || 0);
+        const lab = document.createElement('div'); lab.className = 'text-[11px] text-gray-500'; lab.textContent = label;
+        cell.append(num, lab); grid.append(cell);
+      }
+      const who = document.createElement('p');
+      who.className = 'text-xs text-gray-600';
+      who.textContent = `Recipients: ${c.volunteers || 0} volunteers, ${c.organizers || 0} organizers, ${c.judges || 0} judges. `
+        + 'Ask anyone missing it to check Spam and Promotions; the sender\'s own copy is under Sent / All Mail.';
+      box.append(h, grid, who);
+      for (const [title, list, cls] of [['Failed', rep.failed || [], 'text-red-800'], ['Skipped', rep.skipped || [], 'text-amber-900']]) {
+        if (!list.length) continue;
+        const t = document.createElement('div'); t.className = `mt-2 text-xs font-bold ${cls}`; t.textContent = `${title} (${list.length})`;
+        const ul = document.createElement('ul'); ul.className = 'mt-1 space-y-0.5 text-xs text-gray-700 break-words';
+        for (const item of list) { const li = document.createElement('li'); li.textContent = `${item.who} — ${item.reason}`; ul.append(li); }
+        box.append(t, ul);
+      }
+      box.classList.remove('hidden');
+    }
+    async function loadBlastReport() {
+      try { const r = await api('/api/admin/blast/report'); if (r.report) renderBlastReport(r.report); } catch (e) { /* optional */ }
     }
     document.getElementById('blast-input').addEventListener('input', e => {
       document.getElementById('blast-count').textContent = e.target.value.length;
@@ -1039,6 +1078,7 @@
         if (c.invalid) skipped.push(`${c.invalid} number${c.invalid === 1 ? '' : 's'} not textable (e.g. missing area code)`);
         if (c.missing) skipped.push(`${plural(c.missing, 'sign-up')} without a phone`);
         if (c.duplicates) skipped.push(`${plural(c.duplicates, 'duplicate')} removed`);
+        if (c.organizersWithoutPhone) skipped.push(`${plural(c.organizersWithoutPhone, 'organizer')} with no phone on file (email them with the blast above)`);
         document.getElementById('sms-skipped').textContent =
           `${plural(c.groups, 'group text')} of up to ${r.groupSize}` + (skipped.length ? `. Skipped: ${skipped.join(', ')}.` : '.');
       } catch (e) {

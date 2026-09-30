@@ -150,7 +150,7 @@ test('sms recipients endpoint: admin only, decrypted, normalized, deduped, group
   assert.equal(r.body.groupSize, 20);
   assert.deepEqual(r.body.groups.map(g => g.length), [20, 20, 3]);
   assert.deepEqual(r.body.groups.flat(), expected);
-  assert.deepEqual(r.body.counts, { signups: 47, missing: 1, invalid: 1, duplicates: 2, numbers: 43, groups: 3 });
+  assert.deepEqual(r.body.counts, { signups: 47, missing: 1, invalid: 1, duplicates: 2, numbers: 43, groups: 3, organizersWithoutPhone: 1 });
   assert.equal(r.body.judgesEmailOnly, false);
 
   // Judges have no phones: an empty list with the "email only" flag, not an error.

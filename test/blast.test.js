@@ -174,7 +174,7 @@ test('without SMTP the blast says "banner only" and still sends the banner (SSE 
   assert.equal(r.body.emailConfigured, false);
   assert.equal(r.body.message, 'Email not configured — banner only.');
   assert.equal(r.body.emailed, 0);
-  assert.equal(r.body.skipped, 120);
+  assert.equal(r.body.skipped, 121); // 120 volunteers + the organizer (admin list)
 
   await gotBlast;
   ctrl.abort();
@@ -194,14 +194,15 @@ test('with SMTP: BCC batches of at most 50, deduped, HTML-escaped, counts return
   const r = await call('POST', '/api/blast', { message: 'Line 1 <script>alert(1)</script>\nLine 2 & more', audience: 'both' }, admin);
   assert.equal(r.status, 200);
   assert.equal(r.body.emailConfigured, true);
-  assert.equal(r.body.recipients, 123); // 120 volunteers + 3 judges, vol0 counted once
-  assert.equal(r.body.emailed, 123);
+  assert.equal(r.body.recipients, 124); // 120 volunteers + 1 organizer + 3 judges, vol0 counted once
+  assert.equal(r.body.emailed, 124);
   assert.equal(r.body.failed, 0);
   assert.equal(r.body.skipped, 0);
   assert.equal(t.sent.length, 3);
-  assert.deepEqual(t.sent.map(m => m.bcc.length), [50, 50, 23]);
+  assert.deepEqual(t.sent.map(m => m.bcc.length), [50, 50, 24]);
   const everyone = t.sent.flatMap(m => m.bcc);
-  assert.equal(new Set(everyone).size, 123);
+  assert.equal(new Set(everyone).size, 124);
+  assert.ok(everyone.includes(ADMIN_EMAIL), 'organizers are included');
   assert.ok(everyone.includes('expert2@google.example'));
   for (const m of t.sent) {
     assert.ok(!m.html.includes('<script>'), 'message is HTML-escaped');
@@ -221,7 +222,7 @@ test('audience judges emails only judges; a failed batch is counted as failed', 
   srv._setMailTransportForTests(t);
   const v = await call('POST', '/api/blast', { message: 'Volunteers: teardown at 9', audience: 'volunteers' }, admin);
   assert.equal(v.body.success, false);
-  assert.equal(v.body.emailed, 70);
+  assert.equal(v.body.emailed, 71);
   assert.equal(v.body.failed, 50);
   assert.match(v.body.message, /50 failed/);
 });
