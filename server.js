@@ -11,9 +11,10 @@ const https = require('https');
 const { parse } = require('csv-parse/sync');
 const { Storage } = require('@google-cloud/storage');
 const { mergeRemoteState } = require('./lib/stateMerge');
+const { createSessionSigner, bearerToken } = require('./lib/session');
+const { liveTasks, applyUpdate } = require('./lib/tasks');
 
 
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'devving';
 // 32-byte hex key, injected from Secret Manager (leaderboard-encryption-key)
 if (!/^[0-9a-f]{64}$/i.test(process.env.ENCRYPTION_KEY || '')) {
   throw new Error('ENCRYPTION_KEY must be set to 64 hex characters');
@@ -34,7 +35,9 @@ function decryptField(data) {
   return Buffer.concat([decipher.update(Buffer.from(parts.join(':'), 'hex')), decipher.final()]).toString();
 }
 
-const ADMIN_BEARER_TOKEN = crypto.createHash('sha256').update(ADMIN_PASSWORD).digest('hex');
+// Signs the session tokens issued after Google sign-in (lib/session.js).
+// 32-byte hex key; throws at startup if SESSION_SECRET is missing or malformed.
+const sessions = createSessionSigner(process.env.SESSION_SECRET);
 
 const app = express();
 const PORT = process.env.PORT || 8888;
@@ -930,21 +933,61 @@ if (!fs.existsSync(VOLUNTEERS_FILE)) {
 app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
 app.get('/volunteer', (req, res) => res.sendFile(path.join(__dirname, 'public', 'volunteer.html')));
 
+app.get('/team', (req, res) => res.sendFile(path.join(__dirname, 'public', 'team.html')));
+
+// Roles (functional teams) come from Wrike. They are cached for a minute so a
+// room full of phones does not hit Wrike on every page load, and if Wrike is
+// unreachable we fall back to the last good list or the five known teams.
+const FALLBACK_ROLES = [
+  { id: "MAAAAAEPa5hl", title: "Registration", description: "NFC badging required. Hand off swag bags." },
+  { id: "MAAAAAEQvpZa", title: "Security & Wayfinding", description: "Monitor Moffett Blvd traffic and shuttles." },
+  { id: "MAAAAAEPa5hz", title: "Tech Support", description: "20-min flip at 10:30 AM: Theater to tables." },
+  { id: "MAAAAAEPa5hq", title: "Food & Beverage", description: "Verify 21+ wristbands. Monitor large cooler and ice tubs." },
+  { id: "MAAAAAEPa5hu", title: "Event Cleanup", description: "Hourly sweeps. Teardown at 6:30 PM." }
+];
+const ROLES_TTL_MS = 60 * 1000;
+let rolesCache = { at: 0, roles: null };
+
+async function fetchWrikeRoles() {
+  const url = `https://www.wrike.com/api/v4/folders/${FOLDER_ID}/tasks?fields=['description']`;
+  const response = await fetch(url, {
+    headers: { 'Authorization': `bearer ${WRIKE_TOKEN}` },
+    signal: AbortSignal.timeout(8000)
+  });
+  if (!response.ok) throw new Error(`Wrike responded ${response.status}`);
+  const data = await response.json();
+
+  // Filter only tasks starting with [Volunteer]
+  return (data.data || [])
+    .filter(t => t.title.startsWith('[Volunteer]'))
+    .map(t => ({
+      id: t.id,
+      title: t.title.replace('\[Volunteer\]', '').replace(/Recruit for:?\s*/i, '').trim(),
+      description: (t.description || 'DevFest Bay Area 2026 Volunteer Task').replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|li|h[1-6])>/gi, '\n\n').replace(/&nbsp;/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/ +/g, ' ').replace(/ \n/g, '\n').replace(/\n /g, '\n').replace(/Time Commitment:/gi, '\n\n⏱️ Time Commitment:').replace(/Responsibility:/gi, '📋 Responsibility:').trim(),
+      status: t.status
+    }));
+}
+
+async function getRoles() {
+  if (rolesCache.roles && Date.now() - rolesCache.at < ROLES_TTL_MS) return rolesCache.roles;
+  if (process.env.WRIKE_OFFLINE !== '1') {
+    try {
+      const roles = await fetchWrikeRoles();
+      if (roles.length) {
+        rolesCache = { at: Date.now(), roles };
+        return roles;
+      }
+    } catch (err) {
+      console.warn('[Wrike] Could not load roles, using fallback:', err.message);
+    }
+  }
+  rolesCache = { at: Date.now(), roles: rolesCache.roles || FALLBACK_ROLES };
+  return rolesCache.roles;
+}
+
 app.get('/api/volunteer/tasks', async (req, res) => {
   try {
-    const url = `https://www.wrike.com/api/v4/folders/${FOLDER_ID}/tasks?fields=['description']`;
-    const response = await fetch(url, { headers: { 'Authorization': `bearer ${WRIKE_TOKEN}` } });
-    const data = await response.json();
-    
-    // Filter only tasks starting with [Volunteer]
-    const vTasks = (data.data || [])
-      .filter(t => t.title.startsWith('[Volunteer]'))
-      .map(t => ({
-        id: t.id,
-        title: t.title.replace('\[Volunteer\]', '').replace(/Recruit for:?\s*/i, '').trim(),
-        description: (t.description || 'DevFest Bay Area 2026 Volunteer Task').replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|li|h[1-6])>/gi, '\n\n').replace(/&nbsp;/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/ +/g, ' ').replace(/ \n/g, '\n').replace(/\n /g, '\n').replace(/Time Commitment:/gi, '\n\n⏱️ Time Commitment:').replace(/Responsibility:/gi, '📋 Responsibility:').trim(),
-        status: t.status
-      }));
+    const vTasks = (await getRoles()).map(r => ({ ...r }));
 
     // Inject Venue Deck Instructions based on team assignment
     vTasks.forEach(t => {
@@ -960,16 +1003,16 @@ app.get('/api/volunteer/tasks', async (req, res) => {
       } else if (titleLower.includes('clean') || titleLower.includes('sweep')) {
         t.venueInstructions = "📍 **Venue Ops (Cleanup):** Hourly sweeps to replace bags and wipe tables. Teardown (6:30-8:30 PM): 30 tables folded, chair stacking, vacuuming, full facility reset.";
       }
-      
+
       if (appState.roleInstructions && appState.roleInstructions[t.id]) {
         t.venueInstructions = (t.venueInstructions ? t.venueInstructions + "\n\n" : "") + "📌 **Admin Update:** " + appState.roleInstructions[t.id];
       }
     });
-      
+
     // Read local claims
     const claims = appState.claims || [];
     const claimedIds = claims.map(c => c.taskId);
-    
+
     // Annotate
     const finalTasks = vTasks.map(t => {
        t.claimCount = claimedIds.filter(id => id === t.id).length;
@@ -1135,126 +1178,311 @@ async function notifyAdminOfSignup() {
   }
 }
 
-app.post('/api/volunteer/claim', async (req, res) => {
-  const { taskId, firstName, lastInitial, email, phoneNumber } = req.body;
-  if (!taskId || !firstName || !email || !phoneNumber) return res.status(400).json({ error: 'Missing required fields' });
-  
-  const claimRecord = {
-    taskId,
-    displayName: `${firstName} ${lastInitial}.`,
-    emailData: encryptField(email),
-    phoneData: encryptField(phoneNumber),
-    timestamp: Date.now()
+// --- VOLUNTEER IDENTITY & PROFILES ---
+// A "person" is the set of claims (one per role they signed up for) that share
+// one identity email: the Google account they sign in with, stored encrypted in
+// claim.identityData. Older claims have no identity yet; for those the contact
+// email (emailData) stands in until the person first signs in, which binds the
+// identity. Changing the contact email later never changes who can sign in.
+
+const PERSON_KEY = crypto.createHmac('sha256', ENCRYPTION_KEY).update('devfest-person-key-v1').digest();
+const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,}$/;
+const PHONE_RE = /^[0-9+().\-\s]{7,25}$/;
+
+// Gmail ignores dots and "+tags" in the local part, so a sign-up typed as
+// "First.Last+devfest@gmail.com" still matches the Google account.
+function normalizeEmail(email) {
+  const e = String(email || '').trim().toLowerCase();
+  const at = e.lastIndexOf('@');
+  if (at < 1) return e;
+  let local = e.slice(0, at);
+  let domain = e.slice(at + 1);
+  if (domain === 'googlemail.com') domain = 'gmail.com';
+  if (domain === 'gmail.com') local = local.split('+')[0].replace(/\./g, '');
+  return `${local}@${domain}`;
+}
+
+function safeDecrypt(data) {
+  if (!data) return '';
+  try {
+    return decryptField(data);
+  } catch (e) {
+    return '';
+  }
+}
+
+// Stable, non-reversible id for a person (keyed HMAC of the identity email).
+function personKeyForEmail(email) {
+  return crypto.createHmac('sha256', PERSON_KEY).update(normalizeEmail(email)).digest('hex').slice(0, 24);
+}
+
+const personKeyCache = new Map(); // ciphertext -> person key
+function claimPersonKey(c) {
+  const src = c.identityData || c.emailData || '';
+  if (!src) return null;
+  if (!personKeyCache.has(src)) {
+    if (personKeyCache.size > 5000) personKeyCache.clear();
+    const email = safeDecrypt(src);
+    personKeyCache.set(src, email ? personKeyForEmail(email) : null);
+  }
+  return personKeyCache.get(src);
+}
+
+function claimsOfPerson(personKey) {
+  return appState.claims.filter(c => claimPersonKey(c) === personKey);
+}
+
+function splitLegacyName(displayName) {
+  const parts = String(displayName || '').trim().replace(/\.$/, '').split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return { first: parts[0] || '', last: '' };
+  return { first: parts.slice(0, -1).join(' '), last: parts[parts.length - 1] };
+}
+
+// Decrypted profile of one claim. Never send this to anyone who is not allowed
+// to see that person's contact details.
+function claimProfile(c) {
+  const legacy = splitLegacyName(c.displayName);
+  return {
+    firstName: c.firstName || legacy.first,
+    lastName: safeDecrypt(c.lastNameData) || legacy.last,
+    email: safeDecrypt(c.emailData),
+    phone: safeDecrypt(c.phoneData),
+    signInEmail: safeDecrypt(c.identityData) || ''
   };
-  
-  const claims = appState.claims || [];
-  
-  // Find if this email already claimed this task
-  let existingIndex = -1;
-  for (let i = 0; i < claims.length; i++) {
-    let c = claims[i];
-    if (c.taskId === taskId && c.emailData) {
-      try {
-        if (decryptField(c.emailData).toLowerCase() === email.toLowerCase()) {
-          existingIndex = i;
-          break;
-        }
-      } catch (e) {}
+}
+
+// Public display format stays "First L." (full last name is contact-level info).
+function makeDisplayName(first, last) {
+  const l = String(last || '').trim();
+  return l ? `${first} ${l[0].toUpperCase()}.` : first;
+}
+
+function httpError(status, message) {
+  const err = new Error(message);
+  err.status = status;
+  return err;
+}
+
+function sendError(res, err) {
+  if (err && err.status && err.status < 500) return res.status(err.status).json({ error: err.message });
+  console.error('[Request Error]', err);
+  return res.status(500).json({ error: 'Something went wrong. Please try again.' });
+}
+
+function cleanProfileInput(body, { allowSignInEmail = false } = {}) {
+  const out = {};
+  const str = v => (v === undefined || v === null ? '' : String(v)).trim().replace(/\s+/g, ' ');
+  if ('firstName' in body) {
+    out.firstName = str(body.firstName);
+    if (!out.firstName || out.firstName.length > 40) throw httpError(400, 'First name is required (max 40 characters)');
+  }
+  if ('lastName' in body) {
+    out.lastName = str(body.lastName);
+    if (out.lastName.length > 60) throw httpError(400, 'Last name is too long (max 60 characters)');
+  }
+  if ('email' in body) {
+    out.email = str(body.email);
+    if (out.email.length > 254 || !EMAIL_RE.test(out.email)) throw httpError(400, 'Please enter a valid email address');
+  }
+  if ('phone' in body) {
+    out.phone = str(body.phone);
+    if (out.phone && !PHONE_RE.test(out.phone)) throw httpError(400, 'Please enter a valid phone number');
+  }
+  if (allowSignInEmail && 'signInEmail' in body) {
+    out.signInEmail = str(body.signInEmail);
+    if (out.signInEmail && (out.signInEmail.length > 254 || !EMAIL_RE.test(out.signInEmail))) {
+      throw httpError(400, 'Please enter a valid sign-in email address');
     }
   }
+  return out;
+}
 
-  if (existingIndex > -1) {
-    claims[existingIndex] = claimRecord; // Update the existing sign-up
-  } else {
-    const existingCount = claims.filter(c => c.taskId === taskId).length;
-    if (existingCount >= 10) return res.status(400).json({ error: 'This role has reached its 10-person capacity.' });
-    claims.push(claimRecord);
+// Applies a validated profile to every claim of one person. All PII goes
+// through encryptField. If the contact email changes on a claim that has no
+// bound identity yet, the old contact email becomes the identity first, so
+// editing contact details never changes which Google account can sign in.
+function applyProfile(claims, profile) {
+  const now = Date.now();
+  for (const c of claims) {
+    const cur = claimProfile(c);
+    const first = profile.firstName !== undefined ? profile.firstName : cur.firstName;
+    const last = profile.lastName !== undefined ? profile.lastName : cur.lastName;
+    if (profile.email !== undefined && !c.identityData && cur.email && cur.email.toLowerCase() !== profile.email.toLowerCase()) {
+      c.identityData = encryptField(cur.email.toLowerCase());
+    }
+    c.firstName = first;
+    if (last) c.lastNameData = encryptField(last);
+    else delete c.lastNameData;
+    c.displayName = makeDisplayName(first, last);
+    if (profile.email !== undefined) c.emailData = encryptField(profile.email);
+    if (profile.phone !== undefined) c.phoneData = profile.phone ? encryptField(profile.phone) : '';
+    if (profile.signInEmail !== undefined) {
+      if (profile.signInEmail) c.identityData = encryptField(profile.signInEmail.toLowerCase());
+      else delete c.identityData;
+    }
+    c.profileUpdatedAt = Math.max(now, (c.profileUpdatedAt || 0) + 1);
   }
-  appState.claims = claims;
-  if (!appState.roleInstructions) appState.roleInstructions = {};
-  if (!appState.captainInstructions) appState.captainInstructions = {};
+}
 
-  saveToLocalDisk();
-  backupToCloudStorage();
-  
-  // We intentionally do not mutate the Wrike task status here anymore
-  // so that unlimited volunteers can sign up for the same role without closing it.
-  
-  notifyAdminOfSignup(); // Fire async email
-  notifyVolunteerOfSignup(email, firstName, taskId); // Send confirmation to volunteer
-  res.json({ success: true, message: 'Task successfully claimed!' });
+// Claim timestamps double as claim ids, so keep them unique on this instance.
+function uniqueClaimTimestamp() {
+  let t = Date.now();
+  const used = new Set([...appState.claims.map(c => c.timestamp), ...appState.deletedClaims]);
+  while (used.has(t)) t++;
+  return t;
+}
+
+async function persist() {
+  await saveToLocalDisk();
+  await backupToCloudStorage();
+}
+
+app.post('/api/volunteer/claim', async (req, res) => {
+  try {
+    const { taskId, firstName, lastInitial, lastName, email, phoneNumber } = req.body || {};
+    if (!taskId || !firstName || !email || !phoneNumber) return res.status(400).json({ error: 'Missing required fields' });
+    const profile = cleanProfileInput({ firstName, lastName: lastName !== undefined ? lastName : (lastInitial || ''), email, phone: phoneNumber });
+
+    const personKey = personKeyForEmail(email);
+    const existing = appState.claims.find(c => c.taskId === taskId && claimPersonKey(c) === personKey);
+    if (existing) {
+      // Once someone has signed in, their record can only be changed by them
+      // (or an admin) while signed in, not by anyone re-submitting this form.
+      if (existing.identityData) {
+        return res.status(409).json({ error: 'You are already signed up for this role. Sign in on the Team page (/team) to update your details.' });
+      }
+      applyProfile([existing], profile); // "sign up again to update your phone"
+    } else {
+      const existingCount = appState.claims.filter(c => c.taskId === taskId).length;
+      if (existingCount >= 10) return res.status(400).json({ error: 'This role has reached its 10-person capacity.' });
+      const claim = { taskId, timestamp: uniqueClaimTimestamp(), isCaptain: false };
+      applyProfile([claim], profile);
+      appState.claims.push(claim);
+    }
+    if (!appState.roleInstructions) appState.roleInstructions = {};
+    if (!appState.captainInstructions) appState.captainInstructions = {};
+
+    await persist();
+
+    // We intentionally do not mutate the Wrike task status here anymore
+    // so that unlimited volunteers can sign up for the same role without closing it.
+
+    notifyAdminOfSignup(); // Fire async email
+    notifyVolunteerOfSignup(profile.email, profile.firstName, taskId); // Send confirmation to volunteer
+    res.json({ success: true, message: 'Task successfully claimed!' });
+  } catch (err) {
+    sendError(res, err);
+  }
 });
 // -----------------------------
 
 
-// --- ADMIN & INSTRUCTIONS LOGIC ---
- 
+// --- AUTH (Google sign-in only) ---
+
 const JUDGE_PASS = process.env.JUDGE_PASSWORD || "alldevswin";
 
 if(!appState.volunteerInstructions) {
   appState.volunteerInstructions = "Welcome to the DevFest Volunteer team! Please make sure to check in at the front desk 15 minutes before your shift.";
 }
 
-app.get('/api/auth/status', (req, res) => {
-  res.json({ isSetup: !!appState.admin });
-});
+function isAdminEmail(email) {
+  return appState.allowedAdmins.includes(String(email || '').toLowerCase());
+}
 
-app.post('/api/auth/setup', async (req, res) => {
-  if (appState.admin) {
-    return res.status(400).json({ error: 'Admin already configured' });
+// 401 = not signed in / bad or expired token (client should sign in again).
+// 403 = signed in, but not allowed.
+function requireAdmin(req, res, next) {
+  const session = sessions.verify(bearerToken(req));
+  if (!session) return res.status(401).json({ error: 'Please sign in again.' });
+  // Checked on every request, so removing someone from the admin list revokes
+  // their existing token immediately.
+  if (session.role !== 'admin' || !isAdminEmail(session.email)) {
+    return res.status(403).json({ error: 'This Google account is not a Hub admin.' });
   }
-  const { username, password } = req.body;
-  if (!username || !password) return res.status(400).json({ error: 'Missing fields' });
-  
-  const hash = crypto.createHash('sha256').update(password).digest('hex');
-  appState.admin = { username, hash };
-  
-  await saveToLocalDisk();
-  await backupToCloudStorage();
-  
-  res.json({ success: true });
-});
+  req.session = session;
+  next();
+}
 
+// Any signed-in volunteer (has at least one claim) or admin.
+function requireMember(req, res, next) {
+  const session = sessions.verify(bearerToken(req));
+  if (!session) return res.status(401).json({ error: 'Please sign in again.' });
+  const key = personKeyForEmail(session.email);
+  const claims = claimsOfPerson(key);
+  const isAdmin = session.role === 'admin' && isAdminEmail(session.email);
+  if (!claims.length && !isAdmin) {
+    return res.status(403).json({ error: 'No volunteer sign-up is linked to this Google account.' });
+  }
+  req.session = session;
+  req.person = {
+    key,
+    claims,
+    isAdmin,
+    roleIds: new Set(claims.map(c => c.taskId)),
+    captainRoleIds: new Set(claims.filter(c => c.isCaptain).map(c => c.taskId))
+  };
+  next();
+}
 
 app.get('/api/auth/config', (req, res) => {
   res.json({ clientId: process.env.GOOGLE_CLIENT_ID });
 });
 
+// Exchanges a Google ID token for a Hub session token. Admins get role
+// "admin"; anyone whose Google email matches a volunteer sign-up gets
+// "volunteer". Everyone else is refused.
 app.post('/api/auth/google', async (req, res) => {
-  const { credential } = req.body;
-  if (!credential) return res.status(400).json({ error: 'Missing credential' });
+  const { credential } = req.body || {};
+  if (!credential || typeof credential !== 'string') return res.status(400).json({ error: 'Missing credential' });
 
+  let payload;
   try {
     const ticket = await googleClient.verifyIdToken({
       idToken: credential,
       audience: process.env.GOOGLE_CLIENT_ID,
     });
-    const payload = ticket.getPayload();
-    const email = payload['email'];
-
-    if (appState.allowedAdmins && appState.allowedAdmins.includes(email.toLowerCase())) {
-      return res.json({ success: true, token: ADMIN_BEARER_TOKEN, email });
-    }
-    return res.status(403).json({ error: 'Unauthorized email: ' + email });
+    payload = ticket.getPayload();
   } catch (err) {
-    console.error("Google Auth Error:", err);
+    console.error("Google Auth Error:", err.message);
     return res.status(401).json({ error: 'Invalid Google token' });
+  }
+  if (!payload || !payload.email || payload.email_verified === false) {
+    return res.status(401).json({ error: 'Your Google account email is not verified.' });
+  }
+
+  try {
+    const email = payload.email.toLowerCase();
+    await refreshFromCloud();
+    const admin = isAdminEmail(email);
+    const claims = claimsOfPerson(personKeyForEmail(email));
+    if (!admin && !claims.length) {
+      return res.status(403).json({ error: `${email} is not on the volunteer roster. Sign in with the Google account you signed up with, or ask an organizer to link this email to your sign-up.` });
+    }
+
+    // First sign-in binds the Google account as this person's identity.
+    const unbound = claims.filter(c => !c.identityData);
+    if (unbound.length) {
+      const now = Date.now();
+      for (const c of unbound) {
+        c.identityData = encryptField(email);
+        c.profileUpdatedAt = Math.max(now, (c.profileUpdatedAt || 0) + 1);
+      }
+      await persist();
+    }
+
+    const role = admin ? 'admin' : 'volunteer';
+    const token = sessions.sign({ email, role });
+    res.json({ success: true, token, email, role, isAdmin: admin, isVolunteer: claims.length > 0 });
+  } catch (err) {
+    sendError(res, err);
   }
 });
 
+// Judge login only. Admin password login was removed; admins use Google sign-in.
 app.post('/api/auth', (req, res) => {
-  const { username, password, type } = req.body;
-  
-  if (type === 'admin') {
-    if (!appState.admin) return res.status(400).json({ error: 'Not setup' });
-    const hash = crypto.createHash('sha256').update(password).digest('hex');
-    if (appState.admin.username === username && appState.admin.hash === hash) {
-      return res.json({ success: true, token: ADMIN_BEARER_TOKEN });
-    }
-  } else if (type === 'judge') {
-    if (password === JUDGE_PASS) {
-      return res.json({ success: true, token: 'judge_token_mock' });
-    }
+  const { password, type } = req.body || {};
+  if (type === 'judge' && password === JUDGE_PASS) {
+    return res.json({ success: true, token: 'judge_token_mock' });
   }
   return res.status(401).json({ error: 'Invalid credentials' });
 });
@@ -1264,141 +1492,264 @@ app.get('/api/instructions', (req, res) => {
 });
 
 
-
-function requireAdmin(req, res, next) {
-  const auth = req.headers.authorization;
-  if (!auth || auth !== 'Bearer ' + ADMIN_BEARER_TOKEN) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-  next();
-}
-
-
+// --- ADMIN: VOLUNTEERS & ADMINS ---
 
 app.post('/api/admin/volunteers/:taskId/captain', requireAdmin, async (req, res) => {
   try {
-    let claims = appState.claims || [];
-    const { timestamp } = req.body;
-    let found = false;
-    for (let c of claims) {
-      if (c.taskId === req.params.taskId && c.timestamp == timestamp) {
-        c.isCaptain = !c.isCaptain;
-        found = true;
-        break;
-      }
-    }
-    if (found) {
-      appState.claims = claims;
-      saveToLocalDisk();
-      backupToCloudStorage();
-      res.json({ success: true });
-    } else {
-      res.status(404).json({ error: 'Volunteer not found' });
-    }
-  } catch(e) {
-    res.status(500).json({ error: 'Failed to update captain status' });
+    const { timestamp } = req.body || {};
+    const claim = appState.claims.find(c => c.taskId === req.params.taskId && c.timestamp == timestamp);
+    if (!claim) return res.status(404).json({ error: 'Volunteer not found' });
+    claim.isCaptain = !claim.isCaptain;
+    claim.captainUpdatedAt = Math.max(Date.now(), (claim.captainUpdatedAt || 0) + 1);
+    await persist();
+    broadcastTasksChanged(claim.taskId);
+    res.json({ success: true, isCaptain: claim.isCaptain });
+  } catch (e) {
+    sendError(res, e);
   }
 });
 
-
 app.post('/api/admin/assign', requireAdmin, async (req, res) => {
-  const { taskId, firstName, lastInitial, email, phone, isCaptain } = req.body;
-  
-  if (!taskId || !firstName || !email) return res.status(400).json({ error: 'Missing required fields' });
-  
-  const existingCount = (appState.claims || []).filter(c => c.taskId === taskId).length;
-  // Let admins override the cap of 10 if they want, or enforce it? Let's just bypass cap for Admins.
+  try {
+    const { taskId, firstName, lastInitial, lastName, email, phone, isCaptain } = req.body || {};
+    if (!taskId || !firstName || !email) return res.status(400).json({ error: 'Missing required fields' });
+    const input = { firstName, lastName: lastName !== undefined ? lastName : (lastInitial || ''), email };
+    if (phone) input.phone = phone;
+    const profile = cleanProfileInput(input);
 
-  const claimRecord = {
-    taskId,
-    displayName: `${firstName} ${lastInitial || 'X'}.`,
-    emailData: encryptField(email),
-    phoneData: phone ? encryptField(phone) : '',
-    timestamp: Date.now(),
-    isCaptain: !!isCaptain
-  };
-  
-  appState.claims = appState.claims || [];
-  // Remove dummy data while we're at it (since this endpoint touches state, it will save it)
-  const realNames = ['Peeya', 'Hande', 'Jaynesh', 'Veeresh', 'Ishai', 'Suresh', 'Jorge', 'Tatiana', firstName];
-  appState.claims = appState.claims.filter(c => realNames.some(n => c.displayName.includes(n)));
-  
-  appState.claims.push(claimRecord);
-  
-  await saveToLocalDisk();
-  await backupToCloudStorage();
-  res.json({ success: true });
+    // Admins may exceed the 10-person cap. Re-assigning the same person to the
+    // same role updates their record instead of adding a duplicate. Existing
+    // volunteers are never removed here.
+    const personKey = personKeyForEmail(email);
+    let claim = appState.claims.find(c => c.taskId === taskId && claimPersonKey(c) === personKey);
+    if (!claim) {
+      claim = { taskId, timestamp: uniqueClaimTimestamp(), isCaptain: false, phoneData: '' };
+      appState.claims.push(claim);
+    }
+    applyProfile([claim], profile);
+    if (!!isCaptain !== !!claim.isCaptain) {
+      claim.isCaptain = !!isCaptain;
+      claim.captainUpdatedAt = Math.max(Date.now(), (claim.captainUpdatedAt || 0) + 1);
+    }
+    await persist();
+    broadcastTasksChanged(taskId);
+    res.json({ success: true });
+  } catch (err) {
+    sendError(res, err);
+  }
 });
 
 app.delete('/api/admin/volunteers/:taskId', requireAdmin, async (req, res) => {
   try {
-    let claims = appState.claims || [];
-    
-    const { timestamp } = req.body;
-    const newClaims = claims.filter(c => !(c.taskId === req.params.taskId && c.timestamp === timestamp));
-
-    appState.claims = newClaims;
-    saveToLocalDisk();
-    backupToCloudStorage();
+    const { timestamp } = req.body || {};
+    const before = appState.claims.length;
+    appState.claims = appState.claims.filter(c => !(c.taskId === req.params.taskId && c.timestamp === timestamp));
+    if (appState.claims.length === before) return res.status(404).json({ error: 'Volunteer not found' });
+    // Tombstone so the removal is not undone by another instance's copy.
+    appState.deletedClaims.push(timestamp);
+    await persist();
+    broadcastTasksChanged(req.params.taskId);
     res.json({ success: true });
   } catch(e) {
-    res.status(500).json({ error: 'Failed to delete' });
+    sendError(res, e);
   }
 });
 
-app.get('/api/admin/volunteers', requireAdmin, (req, res) => {
-  // Normally verify token here
+app.get('/api/admin/volunteers', requireAdmin, async (req, res) => {
   try {
-    const claims = appState.claims || [];
-    const results = claims.map(c => {
-      let decryptedEmail = "Error decrypting";
-      try {
-        if (c.emailData) decryptedEmail = decryptField(c.emailData);
-      } catch (e) {
-        console.error("Decryption failed for email", e);
-      }
-      let decryptedPhone = 'N/A';
-      try {
-        if (c.phoneData) decryptedPhone = decryptField(c.phoneData);
-      } catch (e) {}
+    await refreshFromCloud();
+    const results = appState.claims.map(c => {
+      const p = claimProfile(c);
       return {
         taskId: c.taskId,
+        personKey: claimPersonKey(c),
         displayName: c.displayName,
-        email: decryptedEmail,
-        phone: decryptedPhone,
+        firstName: p.firstName,
+        lastName: p.lastName,
+        email: p.email || 'Error decrypting',
+        phone: p.phone || 'N/A',
+        signInEmail: p.signInEmail,
         isCaptain: !!c.isCaptain,
         timestamp: c.timestamp
       };
     });
     res.json({ success: true, volunteers: results });
   } catch(e) {
-    res.status(500).json({ error: 'Failed to read volunteers' });
+    sendError(res, e);
   }
 });
 
+// Admin edit of one person's record (applies to all of their role sign-ups).
+// signInEmail links a different Google account than the contact email.
+app.patch('/api/admin/people/:personKey', requireAdmin, async (req, res) => {
+  try {
+    const claims = claimsOfPerson(req.params.personKey);
+    if (!claims.length) return res.status(404).json({ error: 'Volunteer not found' });
+    const profile = cleanProfileInput(req.body || {}, { allowSignInEmail: true });
+    applyProfile(claims, profile);
+    const newKey = claimPersonKey(claims[0]);
+    if (newKey !== req.params.personKey) rekeyAssignees(req.params.personKey, newKey, req.session.email);
+    await persist();
+    broadcastTasksChanged(null);
+    res.json({ success: true, personKey: newKey });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+function setAdmin(email, allowed, by) {
+  const prev = appState.adminChanges[email];
+  appState.adminChanges[email] = { allowed, at: Math.max(Date.now(), ((prev && prev.at) || 0) + 1), by };
+  ensureStateShape();
+}
 
 app.post('/api/admin/add_admin', requireAdmin, async (req, res) => {
-  const { newAdminEmail } = req.body;
-  if (newAdminEmail && !appState.allowedAdmins.includes(newAdminEmail.toLowerCase())) {
-    appState.allowedAdmins.push(newAdminEmail.toLowerCase());
-    await saveToLocalDisk();
-    await backupToCloudStorage();
-    return res.json({ success: true, allowedAdmins: appState.allowedAdmins });
+  try {
+    const email = String((req.body || {}).newAdminEmail || '').trim().toLowerCase();
+    if (!EMAIL_RE.test(email)) return res.status(400).json({ error: 'Please enter a valid email address' });
+    if (!isAdminEmail(email)) {
+      setAdmin(email, true, req.session.email);
+      await persist();
+    }
+    res.json({ success: true, allowedAdmins: appState.allowedAdmins });
+  } catch (err) {
+    sendError(res, err);
   }
-  res.json({ success: true, allowedAdmins: appState.allowedAdmins });
 });
 
-
-app.post('/api/admin/wipe_dummies', requireAdmin, async (req, res) => {
-  // Wipe dummies (keep only Peeya, Hande, Jaynesh, Veeresh, Ishai, Suresh, Jorge, Tatiana)
-  const realNames = ['Peeya', 'Hande', 'Jaynesh', 'Veeresh', 'Ishai', 'Suresh', 'Jorge', 'Tatiana'];
-  appState.claims = (appState.claims || []).filter(c => realNames.some(n => c.firstName.includes(n)));
-  await saveToLocalDisk();
-  await backupToCloudStorage();
-  res.json({ success: true, claims: appState.claims });
+app.post('/api/admin/remove_admin', requireAdmin, async (req, res) => {
+  try {
+    const email = String((req.body || {}).email || '').trim().toLowerCase();
+    if (!isAdminEmail(email)) return res.status(404).json({ error: 'That email is not an admin' });
+    if (email === req.session.email) return res.status(400).json({ error: 'You cannot remove yourself' });
+    if (appState.allowedAdmins.length <= 1) return res.status(400).json({ error: 'Cannot remove the last admin' });
+    setAdmin(email, false, req.session.email);
+    await persist();
+    res.json({ success: true, allowedAdmins: appState.allowedAdmins });
+  } catch (err) {
+    sendError(res, err);
+  }
 });
+
 app.get('/api/admin/admins', requireAdmin, (req, res) => {
-  res.json({ success: true, allowedAdmins: appState.allowedAdmins });
+  res.json({ success: true, allowedAdmins: appState.allowedAdmins, me: req.session.email });
+});
+
+// If an admin changes someone's sign-in email their person key changes; keep
+// their task assignments pointing at them.
+function rekeyAssignees(oldKey, newKey, by) {
+  for (const t of liveTasks(appState.tasks)) {
+    if (t.assignee && t.assignee.key === oldKey) applyUpdate(t, { assignee: { ...t.assignee, key: newKey } }, by);
+  }
+}
+
+function roleTitleMap(roles) {
+  const m = new Map(roles.map(r => [r.id, r.title]));
+  return id => m.get(id) || 'Unlisted role';
+}
+
+// --- TEAM PAGE (signed-in volunteers, captains, admins) ---
+
+app.get('/api/team/me', requireMember, async (req, res) => {
+  try {
+    const roles = await getRoles();
+    const titleOf = roleTitleMap(roles);
+    const { claims, isAdmin } = req.person;
+    const p = claims.length ? claimProfile(claims[0]) : null;
+    const contactEmails = new Set([req.session.email, ...claims.map(c => claimProfile(c).email.toLowerCase())]);
+    let captainNote = '';
+    for (const e of contactEmails) {
+      if (appState.captainInstructions && appState.captainInstructions[e]) captainNote = appState.captainInstructions[e];
+    }
+    const roleNotes = {};
+    for (const c of claims) {
+      if (appState.roleInstructions && appState.roleInstructions[c.taskId]) roleNotes[c.taskId] = appState.roleInstructions[c.taskId];
+    }
+    res.json({
+      signedInAs: req.session.email,
+      isAdmin,
+      profile: p && {
+        firstName: p.firstName,
+        lastName: p.lastName,
+        displayName: claims[0].displayName,
+        email: p.email,
+        phone: p.phone
+      },
+      assignments: claims.map(c => ({ roleId: c.taskId, roleTitle: titleOf(c.taskId), isCaptain: !!c.isCaptain })),
+      instructions: {
+        global: appState.volunteerInstructions || '',
+        roles: roleNotes,
+        captain: claims.some(c => c.isCaptain) ? captainNote : ''
+      }
+    });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+// Volunteers edit their own record. Applies to every role they signed up for.
+// Their sign-in identity stays the Google account in their session.
+app.patch('/api/team/me', requireMember, async (req, res) => {
+  try {
+    const { claims } = req.person;
+    if (!claims.length) return res.status(400).json({ error: 'You have no volunteer sign-up to edit.' });
+    const body = req.body || {};
+    const profile = cleanProfileInput({
+      ...('firstName' in body ? { firstName: body.firstName } : {}),
+      ...('lastName' in body ? { lastName: body.lastName } : {}),
+      ...('email' in body ? { email: body.email } : {}),
+      ...('phone' in body ? { phone: body.phone } : {})
+    });
+    for (const c of claims) {
+      if (!c.identityData) c.identityData = encryptField(req.session.email);
+    }
+    applyProfile(claims, profile);
+    await persist();
+    broadcastTasksChanged(null);
+    const p = claimProfile(claims[0]);
+    res.json({ success: true, profile: { firstName: p.firstName, lastName: p.lastName, displayName: claims[0].displayName, email: p.email, phone: p.phone } });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+// Roster: everyone signed in sees names, teams and captains. Contact details
+// are included only for yourself, for members of teams you captain, or for admins.
+app.get('/api/team/roster', requireMember, async (req, res) => {
+  try {
+    await refreshFromCloud();
+    const roles = await getRoles();
+    const { key: myKey, isAdmin, captainRoleIds } = req.person;
+    const roleIds = [...new Set([...roles.map(r => r.id), ...appState.claims.map(c => c.taskId)])];
+    const titleOf = roleTitleMap(roles);
+    const out = roleIds.map(roleId => {
+      const people = new Map();
+      for (const c of appState.claims.filter(x => x.taskId === roleId)) {
+        const k = claimPersonKey(c) || `claim_${c.timestamp}`;
+        if (!people.has(k)) people.set(k, { key: k, claim: c });
+        else if (c.isCaptain) people.get(k).claim = c;
+      }
+      const members = [...people.values()].map(({ key, claim }) => {
+        const isMe = key === myKey;
+        const m = { displayName: claim.displayName, isCaptain: !!claim.isCaptain, isMe };
+        if (isMe || isAdmin || captainRoleIds.has(roleId)) {
+          const p = claimProfile(claim);
+          m.contact = { firstName: p.firstName, lastName: p.lastName, email: p.email, phone: p.phone };
+        }
+        return m;
+      }).sort((a, b) => (b.isCaptain - a.isCaptain) || a.displayName.localeCompare(b.displayName));
+      return {
+        roleId,
+        roleTitle: titleOf(roleId),
+        captains: members.filter(m => m.isCaptain).map(m => m.displayName),
+        iCaptain: captainRoleIds.has(roleId),
+        members
+      };
+    }).filter(r => r.members.length || roles.some(x => x.id === r.roleId));
+    res.json({ roles: out });
+  } catch (err) {
+    sendError(res, err);
+  }
 });
 
 app.post('/api/instructions', requireAdmin, async (req, res) => {
