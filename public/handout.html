@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  body {
+    font-family: 'Google Sans', 'Open Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+    color: #202124;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 40px 20px;
+  }
+  h1 {
+    color: #202124;
+    font-size: 2.5em;
+    margin-bottom: 0.2em;
+    font-weight: 700;
+  }
+  h2 {
+    color: #1a73e8; /* Google Blue */
+    border-bottom: 2px solid #e8eaed;
+    padding-bottom: 8px;
+    margin-top: 1.5em;
+    font-weight: 600;
+  }
+  h3 {
+    color: #202124;
+    margin-top: 1.2em;
+    font-weight: 600;
+  }
+  .gdg-header {
+    border-top: 8px solid;
+    border-image: linear-gradient(to right, #4285F4 25%, #EA4335 25%, #EA4335 50%, #FBBC04 50%, #FBBC04 75%, #34A853 75%) 1;
+    padding-top: 20px;
+  }
+  .highlight-box {
+    background-color: #f8f9fa;
+    border-left: 4px solid #34A853; /* Google Green */
+    padding: 15px 20px;
+    margin: 20px 0;
+    border-radius: 0 8px 8px 0;
+  }
+  .path-box {
+    border: 1px solid #dadce0;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 24px;
+    background-color: #ffffff;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+  }
+  .path-1-header { color: #EA4335; border-bottom: 2px solid #fce8e6; } /* Firebase Red */
+  .path-2-header { color: #4285F4; border-bottom: 2px solid #e8f0fe; } /* Cloud Blue */
+  .path-3-header { color: #FBBC04; border-bottom: 2px solid #fef7e0; } /* Game Yellow */
+  
+  .prompt-box {
+    background-color: #e8f0fe;
+    padding: 16px;
+    border-radius: 8px;
+    font-style: italic;
+    color: #1a73e8;
+    margin: 10px 0;
+  }
+  .badge {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 16px;
+    font-size: 0.85em;
+    font-weight: bold;
+    color: white;
+    margin-bottom: 12px;
+  }
+  .bg-red { background-color: #EA4335; }
+  .bg-blue { background-color: #4285F4; }
+  .bg-yellow { background-color: #FBBC04; color: #202124;}
+  code {
+    background-color: #f1f3f4;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.9em;
+    color: #d93025;
+  }
+</style>
+</head>
+<body>
+
+<div class="gdg-header">
+  <h1>🏆 The Vibe Lounge Challenge</h1>
+  <p style="font-size: 1.2em; color: #5f6368;">Welcome to the Vibe Lounge at DevFest Bay Area 2026!</p>
+</div>
+
+<p>You have <strong>40 minutes</strong> to bring an application to life from scratch using AI-assisted coding (Vibe Coding). Today, you get to choose your own adventure! Pick ONE of the three paths below, fire up your AI assistant, and start building.</p>
+
+<div class="highlight-box">
+  <h3>🏁 Get Ready</h3>
+  <p><strong>1. Connect to the Vibe Lounge Network</strong></p>
+  <ul>
+    <li><strong>Network:</strong> <code>DevFest-VibeLounge</code></li>
+    <li><strong>Password:</strong> <code>VibeCode2026</code></li>
+  </ul>
+  <p><em>Note: Please "forget" this network once your session is finished. This keeps the internet running smoothly for the next group of developers!</em></p>
+  
+  <p><strong>2. Access Your Workspace</strong></p>
+  <p>Open <strong>Project IDX (idx.google.com)</strong> or your favorite AI coding assistant and sign in with your Google account.</p>
+</div>
+
+<h2>🚀 Choose Your Adventure</h2>
+<p>Review the three paths below and pick the one that excites you the most. Use the starter prompt to kick off your app, and then follow the prompt-steering goals to complete the challenge!</p>
+
+<!-- PATH 1 -->
+<div class="path-box">
+  <span class="badge bg-red">Path 1</span>
+  <h3 class="path-1-header">Firebase AI Logic: Smart Server-Side Prompting</h3>
+  <p><strong>Mission:</strong> Build a smart server-side application using Firebase AI Logic that safely handles LLM interactions in a secure backend environment.</p>
+  
+  <h4>Starter Prompt</h4>
+  <div class="prompt-box">
+    "Set up a new Node.js backend using Firebase Functions and the Firebase AI Logic SDK. I want to build a smart 'Sentiment & Summarization' API endpoint. The endpoint should take a block of text from a user, securely call the Gemini API on the backend using my Firebase setup, and return a JSON object containing a 1-sentence summary and a sentiment score (Positive/Neutral/Negative)."
+  </div>
+
+  <h4>Prompt-Steering Goals</h4>
+  <ul>
+    <li><strong>Goal 1: The Core Logic.</strong> Add error handling to ensure the endpoint gracefully handles empty inputs or API timeouts.</li>
+    <li><strong>Goal 2: Structured Output.</strong> Prompt the AI to enforce strict JSON schemas on the Gemini output so the frontend always receives the exact same data structure.</li>
+    <li><strong>Goal 3: Authentication Security.</strong> Prompt the AI to secure the endpoint using Firebase App Check or Auth so only logged-in users can trigger the AI logic.</li>
+  </ul>
+</div>
+
+<!-- PATH 2 -->
+<div class="path-box">
+  <span class="badge bg-blue">Path 2</span>
+  <h3 class="path-2-header">Cloud Run: Launch Your Portfolio Website</h3>
+  <p><strong>Mission:</strong> Build and deploy a modern, responsive personal portfolio website hosted seamlessly on Google Cloud Run.</p>
+
+  <h4>Starter Prompt</h4>
+  <div class="prompt-box">
+    "Create a modern, responsive personal portfolio website using HTML, CSS, and vanilla JavaScript. Include a hero section with my name and a generic tagline, an 'About Me' section, a 'Projects' grid, and a 'Contact' footer. Use a clean, tech-focused design with Google fonts. Make sure it is fully contained and ready to be deployed as a containerized app on Google Cloud Run."
+  </div>
+
+  <h4>Prompt-Steering Goals</h4>
+  <ul>
+    <li><strong>Goal 1: Interactive Elements.</strong> Ask the AI to add a dark-mode toggle switch that persists in local storage.</li>
+    <li><strong>Goal 2: Dynamic Project Filtering.</strong> Prompt the AI to add a category filter (e.g., 'Web', 'Mobile', 'AI') above the projects grid that animates the filtering.</li>
+    <li><strong>Goal 3: Containerization.</strong> Ask the AI to generate a complete <code>Dockerfile</code> and <code>cloudbuild.yaml</code> so the app is ready for Cloud Run deployment.</li>
+  </ul>
+</div>
+
+<!-- PATH 3 -->
+<div class="path-box">
+  <span class="badge bg-yellow">Path 3</span>
+  <h3 class="path-3-header">Cloud Run: Web-Based Retro Video Game</h3>
+  <p><strong>Mission:</strong> Code a fully playable 2D retro web game directly in the browser and containerize it for Cloud Run.</p>
+
+  <h4>Starter Prompt</h4>
+  <div class="prompt-box">
+    "Write a complete, playable 2D browser game in a single HTML file using an HTML5 Canvas and JavaScript. Make it a space shooter where the player controls a ship at the bottom, shoots lasers upwards, and destroys falling asteroids. Include a score counter, game over state, and simple restart button. Ensure the code is clean and well-commented."
+  </div>
+
+  <h4>Prompt-Steering Goals</h4>
+  <ul>
+    <li><strong>Goal 1: Power-ups.</strong> Prompt the AI to add a rare 'shield' power-up that drops occasionally and protects the player from one hit.</li>
+    <li><strong>Goal 2: Escalating Difficulty.</strong> Ask the AI to increase the speed and spawn rate of the asteroids as the player's score increases.</li>
+    <li><strong>Goal 3: High Score Storage.</strong> Prompt the AI to save the player's all-time highest score using browser LocalStorage so it persists across refreshes.</li>
+  </ul>
+</div>
+
+<h2>🚢 Publish Your Creation</h2>
+<p>When you're ready to share your work with the world, it's time to deploy!</p>
+<ul>
+  <li><strong>For Firebase (Path 1):</strong> Use the Firebase CLI to run <code>firebase deploy --only functions</code>.</li>
+  <li><strong>For Cloud Run (Paths 2 & 3):</strong> Use the Google Cloud console or CLI to build your container and deploy it to Cloud Run. </li>
+</ul>
+<p><em>(If you are using a personal Google account, you can typically leverage the free tier for Cloud Run and Firebase Spark plans—no credit card required for standard limits!)</em></p>
+
+<div class="highlight-box" style="border-color: #FBBC04; background-color: #fef7e0;">
+  <h3>🎉 Celebrate!</h3>
+  <p>The challenge ends when the countdown in the room hits zero.</p>
+  <p>Share your experience with the world: post your creation or a positive learning from your vibe coding session on your social channels using <strong>#DevFest</strong>!</p>
+  <div style="display: flex; align-items: center; gap: 20px; margin-top: 15px;">
+    <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=http://goo.gle/devfest26-vibe-lounge" alt="Vibe Lounge Badge QR Code" style="border: 4px solid white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); width: 120px; height: 120px;" />
+    <div>
+      <p style="font-size: 1.1em; margin: 0;"><strong>Don’t forget to claim your Vibe Lounge badge!</strong></p>
+      <p style="margin: 5px 0 0 0; color: #5f6368;">Scan the QR code or visit <a href="http://goo.gle/devfest26-vibe-lounge" style="color: #1a73e8;">http://goo.gle/devfest26-vibe-lounge</a></p>
+    </div>
+  </div>
+  <p>Good luck, and happy vibe coding!</p>
+</div>
+
+</body>
+</html>

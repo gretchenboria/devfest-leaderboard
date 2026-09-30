@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DevFest Admin Portal</title>
+  <link rel="icon" type="image/png" href="/assets/hot-sauce-sticker.png">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+
+  <style>
+    @media print {
+      body * {
+        visibility: hidden;
+      }
+      #roster-section, #roster-section * {
+        visibility: visible;
+      }
+      #roster-section {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+      }
+      .flex.gap-4 { /* hide buttons during print */
+        display: none !important;
+      }
+    }
+  </style>
+
+</head>
+<body class="bg-gray-50 text-gray-900 font-sans min-h-screen p-4 sm:p-8">
+
+  <div class="max-w-2xl mx-auto">
+    
+    <!-- Login Screen -->
+    <div id="login-section" class="bg-white rounded-3xl p-8 shadow-xl border border-gray-100 max-w-md mx-auto mt-12 text-center hidden">
+      <img src="/assets/hot-sauce-sticker.png" class="w-16 h-16 mx-auto mb-4" alt="Logo">
+      <h2 class="text-2xl font-black mb-2" id="login-title">Loading...</h2>
+      <p class="text-gray-500 text-sm mb-6" id="login-subtitle"></p>
+      
+      <div id="g_id_onload"
+           data-context="signin"
+           data-ux_mode="popup"
+           data-callback="handleGoogleCredentialResponse"
+           data-auto_prompt="false">
+      </div>
+      
+      <div class="mb-4 text-center">
+        <p class="text-sm text-gray-600"><strong>Team Captains & Admins:</strong> Sign in with your approved Google Account to manage the event.</p>
+      </div>
+      <div id="g_id_signin_container" class="mb-6 flex justify-center w-full"></div>
+
+      <div class="flex items-center gap-2 mb-6">
+        <div class="h-px bg-gray-200 flex-1"></div>
+        <span class="text-xs text-gray-400 font-medium uppercase text-center px-2" id="separator-text">Or use Local Backup Password<br/>(configured in .env)</span>
+        <div class="h-px bg-gray-200 flex-1"></div>
+      </div>
+
+      <input type="text" id="admin-user" placeholder="Username (e.g. admin)" class="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500">
+      <input type="password" id="admin-pass" placeholder="Password" class="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500">
+      <button id="auth-btn" onclick="submitAuth()" class="w-full bg-[#1e1e1e] text-white font-bold py-3 rounded-xl hover:bg-black transition shadow-md">Login</button>
+    </div>
+
+    <!-- Admin Dashboard -->
+    <div id="dashboard-section" class="hidden">
+      <div class="flex items-center justify-between mb-8">
+        <div>
+          <h1 class="text-3xl font-black text-gray-900">Admin Control Panel</h1>
+          <p class="text-gray-500 text-sm">Manage volunteers, blasts, and instructions.</p>
+        </div>
+        <button onclick="logout()" class="px-4 py-2 bg-gray-200 rounded-lg text-sm font-bold text-gray-700 hover:bg-gray-300">Log out</button>
+      </div>
+
+
+      <!-- Resources & Handouts -->
+      <div class="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 mb-6">
+        <h2 class="text-lg font-bold flex items-center gap-2 mb-4"><i data-lucide="file-text" class="text-purple-500"></i> Resources & Handouts</h2>
+        <p class="text-sm text-gray-500 mb-4">Print or share this handout for attendees to follow along with the Vibe Coding Challenge.</p>
+        <div class="flex gap-4">
+          <a href="/handout.html" target="_blank" class="inline-flex items-center gap-2 bg-purple-50 border border-purple-200 hover:bg-purple-100 text-purple-700 font-bold py-3 px-5 rounded-xl transition">
+            <i data-lucide="external-link" class="w-5 h-5"></i> Open Vibe Lounge Handout
+          </a>
+        </div>
+      </div>
+
+      <!-- Quick Add Volunteer -->
+      <div class="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 mb-6">
+        <h2 class="text-lg font-bold flex items-center gap-2 mb-4"><i data-lucide="user-plus" class="text-blue-500"></i> Manually Assign Volunteer</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-5 gap-3">
+          <input type="text" id="manual-task-id" placeholder="Task ID (e.g. 123456789)" class="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <input type="text" id="manual-first-name" placeholder="First Name" class="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <input type="text" id="manual-last-initial" placeholder="Last Initial" class="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <input type="email" id="manual-email" placeholder="Email" class="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <input type="tel" id="manual-phone" placeholder="Phone" class="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <button onclick="manualAddVolunteer()" class="mt-3 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-xl text-sm transition">Assign to Task</button>
+      </div>
+
+      <!-- Roster Card -->
+      <div id="roster-section" class="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 mb-6">
+        
+        <p class="text-sm text-gray-500 mb-4 bg-green-50 p-3 rounded-lg border border-green-100"><i data-lucide="info" class="w-4 h-4 inline text-green-400 mr-1"></i><strong>Privacy Note:</strong> Volunteer emails and phone numbers are stored highly encrypted on the server. They are only decrypted here so you can securely contact them.</p>
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="text-lg font-bold flex items-center gap-2"><i data-lucide="users" class="text-green-500"></i> Volunteer Roster</h2>
+          <div class="flex gap-4"><button onclick="window.print()" class="text-sm text-gray-600 hover:text-black hover:underline flex items-center gap-1"><i data-lucide="printer" class="w-4 h-4"></i> Print</button><button onclick="loadVolunteers()" class="text-sm text-blue-600 hover:underline flex items-center gap-1"><i data-lucide="refresh-cw" class="w-4 h-4"></i> Refresh</button></div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="bg-gray-50 border-b border-gray-100 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                <th class="p-3 rounded-tl-lg">Task ID</th>
+                <th class="p-3">Volunteer</th>
+                <th class="p-3">Contact Email</th>
+                <th class="p-3">Phone</th><th class="p-3 rounded-tr-lg text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="roster-tbody" class="text-sm divide-y divide-gray-100">
+              <tr><td colspan="5" class="p-4 text-center text-gray-400">Loading roster...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      
+      
+
+      
+      <!-- Manage Admins Card -->
+      <div class="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 mb-6">
+        <h2 class="text-lg font-bold flex items-center gap-2 mb-4"><i data-lucide="shield" class="text-purple-500"></i> Manage Hub Admins</h2>
+        
+        <p class="text-sm text-gray-500 mb-4 bg-purple-50 p-3 rounded-lg border border-purple-100"><i data-lucide="info" class="w-4 h-4 inline text-purple-400 mr-1"></i><strong>How it works:</strong> Type the email address of any Co-Organizer below and click "Add Admin". Once their email is added to this list, they can visit this page and click the <strong>"Sign in with Google"</strong> button to get instant access to this dashboard.</p>
+        <div class="flex gap-2 mb-4">
+          <input type="email" id="new-admin-email" placeholder="captain@example.com" class="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none">
+          <button onclick="addAdmin()" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-xl text-sm transition">Add Admin</button>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <tbody id="admins-tbody" class="text-sm divide-y divide-gray-100">
+              <tr><td class="p-4 text-center text-gray-400">Loading admins...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      
+        
+        <!-- Manage Pre-Registered Teams -->
+        <h2 class="text-lg font-bold flex items-center gap-2 mb-4 mt-8"><i data-lucide="users" class="text-green-500"></i> Pre-Register Teams</h2>
+        <p class="text-sm text-gray-500 mb-4 bg-green-50 p-3 rounded-lg border border-green-100">Add team names here so judges can easily select them from a dropdown without typing.</p>
+        <div class="flex gap-2 mb-4">
+          <input type="text" id="new-team-name" placeholder="Team Name" class="border p-2 rounded flex-1 text-sm">
+          <select id="new-team-track" class="border p-2 rounded text-sm bg-white">
+            <option value="Developer Track">Developer Track</option>
+            <option value="Builder Track">Builder Track</option>
+          </select>
+          <button onclick="addTeam()" class="bg-blue-600 text-white px-4 py-2 rounded text-sm font-bold">Add Team</button>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 mb-6 p-4">
+          <ul id="teams-list" class="divide-y divide-gray-100"></ul>
+        </div>
+
+        <!-- Manage Leaderboard Data -->
+        <h2 class="text-lg font-bold flex items-center gap-2 mb-4 mt-8"><i data-lucide="database" class="text-indigo-500"></i> Manage Leaderboard Data</h2>
+        <div class="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 mb-6 overflow-x-auto">
+          <table class="w-full text-left text-sm whitespace-nowrap">
+            <thead class="bg-gray-50 text-gray-500">
+              <tr>
+                <th class="p-3 font-semibold rounded-tl-xl">Team Name</th>
+                <th class="p-3 font-semibold">Judge</th>
+                <th class="p-3 font-semibold">Track</th>
+                <th class="p-3 font-semibold">Total Score</th>
+                <th class="p-3 font-semibold rounded-tr-xl">Action</th>
+              </tr>
+            </thead>
+            <tbody id="scores-tbody" class="divide-y divide-gray-100">
+              <!-- JS Populated -->
+            </tbody>
+          </table>
+          <div class="mt-4 flex gap-4">
+            <button onclick="loadScores()" class="text-sm text-blue-600 hover:underline flex items-center gap-1"><i data-lucide="refresh-cw" class="w-4 h-4"></i> Refresh Scores</button>
+            <button onclick="wipeDummies()" class="text-sm text-red-600 hover:underline flex items-center gap-1"><i data-lucide="trash-2" class="w-4 h-4"></i> Wipe Demo Data</button>
+          </div>
+        </div>
+
+        <!-- Instructions Card -->
+      <div class="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 mb-6">
+        <h2 class="text-lg font-bold flex items-center gap-2 mb-4"><i data-lucide="edit" class="text-blue-500"></i> Set Custom Instructions</h2>
+        <p class="text-xs text-gray-500 mb-3">Target specific roles, specific captains, or all volunteers.</p>
+        
+        <select id="inst-target" class="w-full bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm mb-3 outline-none">
+          <option value="global">🌐 Global (All Volunteers)</option>
+          <optgroup id="opt-roles" label="Roles / Tasks"></optgroup>
+          <optgroup id="opt-captains" label="Team Captains (Volunteers)"></optgroup>
+        </select>
+        
+        <textarea id="instructions-input" rows="3" class="w-full bg-gray-50 border border-gray-200 rounded-xl p-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-3" placeholder="Enter instructions here..."></textarea>
+        <button onclick="saveInstructions()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-xl text-sm transition">Save Target Instruction</button>
+        
+        <div class="mt-6 border-t border-gray-100 pt-4">
+          <h3 class="text-sm font-bold text-gray-800 mb-3">Active Custom Instructions</h3>
+          <div id="current-custom-instructions" class="space-y-2"></div>
+        </div>
+        
+        
+      </div>
+
+      <!-- Blast Card -->
+      <div class="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 mb-6">
+        <h2 class="text-lg font-bold flex items-center gap-2 mb-4"><i data-lucide="megaphone" class="text-red-500"></i> Blast Announcements</h2>
+        <p class="text-xs text-gray-500 mb-3">Send an SMS/Email alert to all signed-up volunteers.</p>
+        <textarea id="blast-input" rows="2" class="w-full bg-gray-50 border border-gray-200 rounded-xl p-4 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 mb-3" placeholder="ATTENTION ALL VOLUNTEERS: ..."></textarea>
+        <button onclick="sendBlast()" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-6 rounded-xl text-sm transition shadow-sm shadow-red-200">Send Blast 🚀</button>
+      </div>
+      
+      <a href="/volunteer" target="_blank" class="text-blue-600 text-sm font-bold hover:underline">View Volunteer Hub &rarr;</a>
+    </div>
+
+  </div>
+
+  <script>
+    lucide.createIcons();
+
+    let isSetupMode = false;
+
+    
+    
+    async function loadAdmins() {
+      try {
+        const res = await fetch('/api/admin/admins', { headers: { 'Authorization': 'Bearer ' + sessionStorage.getItem('admin_token') } });
+        const data = await res.json();
+        if (data.success) {
+          document.getElementById('admins-tbody').innerHTML = data.allowedAdmins.map(email => `
+            <tr class="hover:bg-gray-50 transition-colors">
+              <td class="p-3 font-medium text-gray-900">${email}</td>
+            </tr>
+          `).join('');
+        }
+      } catch(e) {
+        console.error("Failed to load admins");
+      }
+    }
+
+    async function addAdmin() {
+      const email = document.getElementById('new-admin-email').value;
+      if (!email) return;
+      try {
+        const res = await fetch('/api/admin/add_admin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionStorage.getItem('admin_token') },
+          body: JSON.stringify({ newAdminEmail: email })
+        });
+        const data = await res.json();
+        if (data.success) {
+          document.getElementById('new-admin-email').value = '';
+          loadAdmins();
+        loadScores();
+        loadTeams();
+        } else {
+          alert('Failed to add admin');
+        }
+      } catch (e) {
+        alert('Network error');
+      }
+    }
+
+    
+    
+    async function toggleCaptain(taskId, timestamp) {
+      try {
+        const res = await fetch('/api/admin/volunteers/' + taskId + '/captain', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionStorage.getItem('admin_token') },
+          body: JSON.stringify({ timestamp })
+        });
+        if (res.ok) {
+          loadVolunteers();
+        } else {
+          alert('Failed to update captain status');
+        }
+      } catch(e) {
+        alert('Network error');
+      }
+    }
+
+    async function deleteVolunteer(taskId, timestamp) {
+      if (!confirm('Are you sure you want to remove this volunteer?')) return;
+      try {
+        const res = await fetch('/api/admin/volunteers/' + taskId, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionStorage.getItem('admin_token') },
+          body: JSON.stringify({ timestamp })
+        });
+        if (res.ok) {
+          loadVolunteers();
+        } else {
+          alert('Failed to delete');
+        }
+      } catch (e) {
+        alert('Network error');
+      }
+    }
+
+    
+    async function deleteVolunteerGroup(tasksJson) {
+      if (!confirm('Are you sure you want to remove this volunteer from ALL their tasks?')) return;
+      const tasks = JSON.parse(tasksJson);
+      try {
+        for (let t of tasks) {
+          await fetch('/api/admin/volunteers/' + t.id, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionStorage.getItem('admin_token') },
+            body: JSON.stringify({ timestamp: t.ts })
+          });
+        }
+        loadVolunteers();
+      } catch(e) {
+        alert('Network error');
+      }
+    }
+    
+    async function toggleCaptainGroup(taskId, timestamp) {
+      try {
+        const res = await fetch('/api/admin/volunteers/' + taskId + '/captain', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionStorage.getItem('admin_token') },
+          body: JSON.stringify({ timestamp })
+        });
+        if (res.ok) {
+          loadVolunteers();
+        } else {
+          alert('Failed to update captain status');
+        }
+      } catch(e) {
+        alert('Network error');
+      }
+    }
+  
+    
+    async function assignVolunteer() {
+      const firstName = document.getElementById('assign-fname').value;
+      const lastInitial = document.getElementById('assign-lname').value;
+      const email = document.getElementById('assign-email').value;
+      const phone = document.getElementById('assign-phone').value;
+      const taskId = document.getElementById('assign-task').value;
+      const isCaptain = document.getElementById('assign-captain').checked;
+      
+      if(!firstName || !email || !taskId) return alert('First Name, Email, and Task are required.');
+      
+      try {
+        const res = await fetch('/api/admin/assign', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionStorage.getItem('admin_token') },
+          body: JSON.stringify({ taskId, firstName, lastInitial, email, phone, isCaptain })
+        });
+        const data = await res.json();
+        if(data.success) {
+          alert('Volunteer assigned successfully!');
+          document.getElementById('assign-fname').value = '';
+          document.getElementById('assign-lname').value = '';
+          document.getElementById('assign-email').value = '';
+          document.getElementById('assign-phone').value = '';
+          document.getElementById('assign-captain').checked = false;
+          loadVolunteers();
+          loadInstructionTargets(); // refresh captain list
+        } else {
+          alert('Failed to assign volunteer: ' + data.error);
+        }
+      } catch(e) {
+        alert('Network error');
+      }
+    }
+
+    async function loadVolunteers() {
+      const tbody = document.getElementById('roster-tbody');
+      try {
+        const res = await fetch('/api/admin/volunteers', { headers: { 'Authorization': 'Bearer ' + sessionStorage.getItem('admin_token') } });
+        if (res.status === 401) { logout(); return; }
+        const data = await res.json();
+        if (data.success) {
+          if (data.volunteers.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-400">No volunteers have signed up yet.</td></tr>';
+            return;
+          }
+          tbody.innerHTML = data.volunteers.map(v => `
+            <tr class="hover:bg-gray-50 transition-colors">
+              <td class="p-3 text-xs font-mono text-gray-500">${v.taskId}</td>
+              <td class="p-3 font-bold text-gray-900 flex items-center gap-2">
+                ${v.isCaptain ? '<span title="Team Captain" class="text-yellow-500"><i data-lucide="star" class="w-4 h-4 fill-current"></i></span>' : ''}
+                ${v.displayName}
+              </td>
+              <td class="p-3"><a href="mailto:${v.email}" class="text-blue-600 hover:underline">${v.email}</a></td>
+              <td class="p-3 text-gray-700">${v.phone}</td>
+              <td class="p-3 text-right">
+                <button onclick="toggleCaptain('${v.taskId}', ${v.timestamp})" class="${v.isCaptain ? 'text-gray-500 bg-gray-50 border-gray-200 hover:text-gray-700' : 'text-yellow-600 bg-yellow-50 border-yellow-200 hover:text-yellow-800'} text-xs font-bold px-2 py-1 rounded border mr-1">${v.isCaptain ? 'Demote' : 'Make Captain'}</button>
+                <button onclick="deleteVolunteer('${v.taskId}')" class="text-red-500 hover:text-red-700 text-xs font-bold px-2 py-1 bg-red-50 rounded border border-red-200">Remove</button>
+              </td>
+            </tr>
+          `).join('');
+        }
+      } catch(e) {
+        tbody.innerHTML = '<tr><td colspan="3" class="p-4 text-center text-red-500">Failed to load roster.</td></tr>';
+      }
+    }
+  
+    
+    async function initGoogleAuth() {
+      try {
+        const res = await fetch('/api/auth/config');
+        const data = await res.json();
+        
+        if (data.clientId && data.clientId !== 'your_google_oauth_client_id') {
+          document.getElementById('g_id_onload').setAttribute('data-client_id', data.clientId);
+          
+          if (window.google) {
+            google.accounts.id.initialize({
+              client_id: data.clientId,
+              callback: handleGoogleCredentialResponse
+            });
+            google.accounts.id.renderButton(
+              document.getElementById("g_id_signin_container"),
+              { theme: "outline", size: "large", width: "100%" }
+            );
+          }
+        } else {
+          document.getElementById('g_id_signin_container').innerHTML = '<p class="text-xs text-red-500 mb-4 font-bold border border-red-200 bg-red-50 rounded p-2">Google Sign-in is not configured. Missing GOOGLE_CLIENT_ID.</p>';
+        }
+      } catch (e) {
+        console.error("Failed to load Google Auth Config", e);
+      }
+    }
+
+    async function handleGoogleCredentialResponse(response) {
+      if (response.credential) {
+        try {
+          const res = await fetch('/api/auth/google', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ credential: response.credential })
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            sessionStorage.setItem('admin_token', data.token);
+            location.reload();
+          } else {
+            alert("Google Sign-In failed: " + (data.error || "Unknown error"));
+          }
+        } catch (e) {
+          alert("Network error during Google Sign-In");
+        }
+      }
+    }
+
+    
+    async function manualAddVolunteer() {
+      const payload = {
+        taskId: document.getElementById('manual-task-id').value,
+        firstName: document.getElementById('manual-first-name').value,
+        lastInitial: document.getElementById('manual-last-initial').value,
+        email: document.getElementById('manual-email').value,
+        phoneNumber: document.getElementById('manual-phone').value
+      };
+      if (!payload.taskId || !payload.firstName || !payload.email || !payload.phoneNumber) {
+        alert("Please fill all required fields.");
+        return;
+      }
+      try {
+        const res = await fetch('/api/volunteer/claim', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+          document.getElementById('manual-task-id').value = '';
+          document.getElementById('manual-first-name').value = '';
+          document.getElementById('manual-last-initial').value = '';
+          document.getElementById('manual-email').value = '';
+          document.getElementById('manual-phone').value = '';
+          loadVolunteers();
+        } else {
+          alert('Failed to add volunteer');
+        }
+      } catch (e) {
+        alert('Network error');
+      }
+    }
+
+    async function checkStatus() {
+      if (sessionStorage.getItem('admin_token')) {
+        document.getElementById('dashboard-section').classList.remove('hidden');
+        loadVolunteers();
+        loadAdmins();
+        return;
+      }
+      const res = await fetch('/api/auth/status');
+      const data = await res.json();
+      
+      const section = document.getElementById('login-section');
+      section.classList.remove('hidden');
+      
+      if (!data.isSetup) {
+        isSetupMode = true;
+        document.getElementById('login-title').innerText = "Create Admin Account";
+        document.getElementById('login-subtitle').innerText = "First-time setup. Set your admin credentials.";
+        document.getElementById('auth-btn').innerText = "Create Account";
+        document.getElementById('separator-text').innerText = "Set Local Credentials";
+      } else {
+        isSetupMode = false;
+        document.getElementById('login-title').innerText = "Organizer Login";
+        document.getElementById('login-subtitle').innerText = "Welcome back!";
+        document.getElementById('auth-btn').innerText = "Login";
+        document.getElementById('separator-text').innerText = "Or use Admin Pass";
+      }
+    }
+    checkStatus();
+    setTimeout(initGoogleAuth, 500);
+
+    async function submitAuth() {
+      const u = document.getElementById('admin-user').value;
+      const p = document.getElementById('admin-pass').value;
+      
+      if (!u || !p) return alert("Please fill in both fields");
+
+      if (isSetupMode) {
+        const res = await fetch('/api/auth/setup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: u, password: p })
+        });
+        if (res.ok) {
+          alert("Admin account created! You are now logged in.");
+          sessionStorage.setItem('admin_token', data.token);
+          location.reload();
+        } else {
+          alert('Failed to create account.');
+        }
+      } else {
+        const res = await fetch('/api/auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'admin', username: u, password: p })
+        });
+        if (res.ok) {
+          sessionStorage.setItem('admin_token', data.token);
+          location.reload();
+        } else {
+          alert('Invalid credentials!');
+        }
+      }
+    }
+
+    function logout() {
+      sessionStorage.removeItem('admin_token');
+      location.reload();
+    }
+
+    
+    async function deleteInstruction(target) {
+      if(!confirm('Delete this instruction?')) return;
+      try {
+        const res = await fetch('/api/instructions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionStorage.getItem('admin_token') },
+          body: JSON.stringify({ target, text: '' })
+        });
+        if (res.ok) {
+          loadInstructionTargets();
+        }
+      } catch(e) {}
+    }
+
+    
+
+    
+    async function loadInstructionTargets() {
+      try {
+        const tRes = await fetch('/api/volunteer/tasks');
+        const tasks = await tRes.json();
+        
+        const assignSelect = document.getElementById('assign-task');
+        if(assignSelect) assignSelect.innerHTML = tasks.map(t => `<option value="${t.id}">${t.title}</option>`).join('');
+        
+        const roleOpt = document.getElementById('opt-roles');
+        if (roleOpt) roleOpt.innerHTML = tasks.map(t => `<option value="role_${t.id}">📋 ${t.title}</option>`).join('');
+        
+        const vRes = await fetch('/api/admin/volunteers', { headers: { 'Authorization': 'Bearer ' + sessionStorage.getItem('admin_token') } });
+        const vData = await vRes.json();
+        if (vData.success) {
+          const capOpt = document.getElementById('opt-captains');
+          const captains = vData.volunteers.filter(v => v.isCaptain);
+          const uniqueCapEmails = [...new Set(captains.map(c => c.email))];
+          if(capOpt) {
+            capOpt.innerHTML = uniqueCapEmails.map(e => {
+              const cObj = captains.find(c => c.email === e);
+              const tName = tasks.find(t => t.id === cObj.taskId)?.title || 'Task';
+              return `<option value="cap_${e}">⭐ ${cObj.displayName} (${tName})</option>`;
+            }).join('');
+          }
+        }
+        
+        const iRes = await fetch('/api/instructions/all', { headers: { 'Authorization': 'Bearer ' + sessionStorage.getItem('admin_token') } });
+        const iData = await iRes.json();
+        
+        let html = '';
+        if (iData.global) {
+           html += `<div class="bg-gray-50 border border-gray-200 rounded-lg p-3 flex justify-between items-start mb-2">
+                     <div><span class="text-[10px] font-black uppercase tracking-wider bg-gray-200 text-gray-800 px-2 py-1 rounded mr-2">Global</span> <span class="text-sm text-gray-700 whitespace-pre-wrap">${iData.global}</span></div>
+                     <button onclick="deleteInstruction('global')" class="text-red-500 hover:text-red-700 ml-4"><i data-lucide="trash" class="w-4 h-4"></i></button>
+                   </div>`;
+        }
+        if (iData.roles) {
+          for (const [rId, text] of Object.entries(iData.roles)) {
+            const tName = tasks.find(t => t.id === rId)?.title || rId;
+            html += `<div class="bg-blue-50 border border-blue-200 rounded-lg p-3 flex justify-between items-start mb-2">
+                       <div><span class="text-[10px] font-black uppercase tracking-wider bg-blue-200 text-blue-900 px-2 py-1 rounded mr-2">Role: ${tName}</span> <span class="text-sm text-gray-700 whitespace-pre-wrap">${text}</span></div>
+                       <button onclick="deleteInstruction('role_${rId}')" class="text-red-500 hover:text-red-700 ml-4"><i data-lucide="trash" class="w-4 h-4"></i></button>
+                     </div>`;
+          }
+        }
+        if (iData.captains) {
+          for (const [cEmail, text] of Object.entries(iData.captains)) {
+            html += `<div class="bg-purple-50 border border-purple-200 rounded-lg p-3 flex justify-between items-start mb-2">
+                       <div><span class="text-[10px] font-black uppercase tracking-wider bg-purple-200 text-purple-900 px-2 py-1 rounded mr-2">Captain: ${cEmail}</span> <span class="text-sm text-gray-700 whitespace-pre-wrap">${text}</span></div>
+                       <button onclick="deleteInstruction('cap_${cEmail}')" class="text-red-500 hover:text-red-700 ml-4"><i data-lucide="trash" class="w-4 h-4"></i></button>
+                     </div>`;
+          }
+        }
+        const cci = document.getElementById('current-custom-instructions');
+        if (cci) {
+          cci.innerHTML = html || '<p class="text-sm text-gray-400">No custom instructions set yet.</p>';
+          lucide.createIcons();
+        }
+      } catch(e) {
+        console.error("loadInstructionTargets error:", e);
+      }
+    }
+    
+    async function deleteInstruction(target) {
+      if(!confirm('Delete this instruction?')) return;
+      try {
+        const res = await fetch('/api/instructions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionStorage.getItem('admin_token') },
+          body: JSON.stringify({ target, text: '' })
+        });
+        if (res.ok) {
+          loadInstructionTargets();
+        }
+      } catch(e) {}
+    }
+
+    async function saveInstructions() {
+      const text = document.getElementById('instructions-input').value;
+      const targetEl = document.getElementById('inst-target');
+      const target = targetEl ? targetEl.value : 'global';
+      
+      try {
+        const res = await fetch('/api/instructions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionStorage.getItem('admin_token') },
+          body: JSON.stringify({ target, text })
+        });
+        const data = await res.json();
+        if (data.success) {
+          alert('Instructions saved!');
+          document.getElementById('instructions-input').value = '';
+          loadInstructionTargets();
+        } else {
+          alert('Failed to save instructions');
+        }
+      } catch (e) {
+        alert('Network error');
+      }
+    }
+
+    async function sendBlast() {
+      const text = document.getElementById('blast-input').value;
+      if(!text) return;
+      const res = await fetch('/api/blast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionStorage.getItem('admin_token') },
+        body: JSON.stringify({ message: text })
+      });
+      if (res.ok) {
+        alert('Blast message triggered!');
+        document.getElementById('blast-input').value = '';
+      }
+    }
+  </script>
+</body>
+</html>
