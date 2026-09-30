@@ -922,3 +922,14 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 // ---------------------------------
+
+
+async function fetchPreRegisteredTeams() {
+  try {
+    const res = await fetch('/api/teams');
+    const data = await res.json();
+    return data.teams || [];
+  } catch(e) {
+    return [];
+  }
+}

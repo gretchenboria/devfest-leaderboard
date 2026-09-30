@@ -206,7 +206,8 @@ const RUBRIC_DATA = {
 let appState = {
   allowedAdmins: ['gretchen.beach@gmail.com'],
   claims: [], // Volunteer signups
-  scores: [], // Array of score entries
+  scores: [],
+  registeredTeams: [], // Array of score entries
   lastSyncTime: null,
   syncStatus: "Initializing",
   gcsBackupTime: null,
@@ -611,6 +612,33 @@ app.delete('/api/scores/:id', requireAdmin, async (req, res) => {
   } else {
     res.status(404).json({ success: false, error: 'Score not found' });
   }
+});
+
+
+// Team Registration Endpoints
+app.get('/api/teams', (req, res) => {
+  res.json({ teams: appState.registeredTeams || [] });
+});
+
+app.post('/api/teams', requireAdmin, async (req, res) => {
+  const { teamName, track } = req.body;
+  if (!appState.registeredTeams) appState.registeredTeams = [];
+  if (teamName && !appState.registeredTeams.find(t => t.teamName.toLowerCase() === teamName.trim().toLowerCase())) {
+    appState.registeredTeams.push({ teamName: teamName.trim(), track });
+    appState.lastSyncTime = new Date().toISOString();
+    await saveScoresToGCS();
+    res.json({ success: true });
+  } else {
+    res.status(400).json({ success: false, error: 'Team already exists or invalid' });
+  }
+});
+
+app.delete('/api/teams/:name', requireAdmin, async (req, res) => {
+  if (!appState.registeredTeams) appState.registeredTeams = [];
+  appState.registeredTeams = appState.registeredTeams.filter(t => t.teamName !== req.params.name);
+  appState.lastSyncTime = new Date().toISOString();
+  await saveScoresToGCS();
+  res.json({ success: true });
 });
 
 // --- SERVER-SENT EVENTS (SSE) FOR SILENT BACKGROUND UPDATES ---
