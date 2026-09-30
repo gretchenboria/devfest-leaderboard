@@ -1,3 +1,13 @@
 node_modules/
 data/
 .env
+.DS_Store
+.claude/
+# one-off scratch scripts and data dumps (may contain PII)
+patch_*.js
+patch_*.cjs
+fix_*.js
+fix_*.cjs
+wipe_dummy.js
+restore.json
+clean_restore.json
