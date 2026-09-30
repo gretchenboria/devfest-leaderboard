@@ -12,7 +12,11 @@ const { parse } = require('csv-parse/sync');
 const { Storage } = require('@google-cloud/storage');
 const { mergeRemoteState } = require('./lib/stateMerge');
 const { createSessionSigner, bearerToken } = require('./lib/session');
-const { liveTasks, applyUpdate } = require('./lib/tasks');
+const {
+  TaskError, LIMITS: TASK_LIMITS, normalizeFields, cleanStatus, cleanNote, createTask, applyUpdate, addNote,
+  makeTombstone, liveTasks, compareTasks, publicTask, progressOf
+} = require('./lib/tasks');
+const { KINDS, TEMPLATES, roleKind, templatesForTitle, seedTaskId } = require('./lib/taskTemplates');
 
 
 // 32-byte hex key, injected from Secret Manager (leaderboard-encryption-key)
@@ -1588,7 +1592,7 @@ app.patch('/api/admin/people/:personKey', requireAdmin, async (req, res) => {
     const profile = cleanProfileInput(req.body || {}, { allowSignInEmail: true });
     applyProfile(claims, profile);
     const newKey = claimPersonKey(claims[0]);
-    if (newKey !== req.params.personKey) rekeyAssignees(req.params.personKey, newKey, req.session.email);
+    if (newKey !== req.params.personKey) rekeyAssignees(req.params.personKey, newKey, ORGANIZER);
     await persist();
     broadcastTasksChanged(null);
     res.json({ success: true, personKey: newKey });
@@ -1747,6 +1751,295 @@ app.get('/api/team/roster', requireMember, async (req, res) => {
       };
     }).filter(r => r.members.length || roles.some(x => x.id === r.roleId));
     res.json({ roles: out });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+// --- TEAM TASKS ---
+// Tasks the admin hands to each role's captain(s). Model and merge rules live
+// in lib/tasks.js; recommended tasks in lib/taskTemplates.js.
+
+// Admin edits are attributed to "Organizer" so admin emails never reach
+// volunteers through task history.
+const ORGANIZER = 'Organizer';
+
+// Unique captains of a role, as { key, name }.
+function captainsOfRole(roleId) {
+  const seen = new Map();
+  for (const c of appState.claims) {
+    if (c.taskId !== roleId || !c.isCaptain) continue;
+    const key = claimPersonKey(c);
+    if (key && !seen.has(key)) seen.set(key, { key, name: c.displayName });
+  }
+  return [...seen.values()];
+}
+
+function resolveAssignee(roleId, key) {
+  if (!key) return null;
+  const cap = captainsOfRole(roleId).find(c => c.key === key);
+  if (!cap) throw new TaskError(400, 'Tasks can only be assigned to a captain of that role.');
+  return { key: cap.key, name: cap.name };
+}
+
+async function knownRoles() {
+  const roles = await getRoles();
+  const ids = new Set(roles.map(r => r.id));
+  const extra = new Set();
+  for (const c of appState.claims) if (!ids.has(c.taskId)) extra.add(c.taskId);
+  for (const t of liveTasks(appState.tasks)) if (!ids.has(t.roleId)) extra.add(t.roleId);
+  return [...roles, ...[...extra].map(id => ({ id, title: 'Unlisted role', description: '' }))];
+}
+
+async function requireKnownRole(roleId) {
+  if (typeof roleId !== 'string' || !roleId) throw new TaskError(400, 'roleId is required');
+  const role = (await knownRoles()).find(r => r.id === roleId);
+  if (!role) throw new TaskError(400, 'Unknown role');
+  return role;
+}
+
+function sortedRoleTasks(roleId) {
+  return liveTasks(appState.tasks).filter(t => t.roleId === roleId).sort(compareTasks);
+}
+
+function checkTaskCapacity(adding) {
+  if (liveTasks(appState.tasks).length + adding > TASK_LIMITS.tasks) {
+    throw new TaskError(400, `Too many tasks (limit ${TASK_LIMITS.tasks}).`);
+  }
+}
+
+function templateStatus(roleId, title) {
+  return templatesForTitle(title).map(tpl => {
+    const existing = appState.tasks[seedTaskId(roleId, tpl.key)];
+    return {
+      ...tpl,
+      state: !existing ? 'available' : existing.deleted ? 'deleted' : 'added'
+    };
+  });
+}
+
+// Creates the chosen templates for a role. Idempotent: ids are derived from
+// role + template key, and existing or deleted ones are skipped.
+function seedRole(role, keys, by) {
+  const created = [];
+  let skipped = 0;
+  const kind = roleKind(role.title);
+  const templates = kind ? TEMPLATES[kind] : [];
+  for (const tpl of templates) {
+    if (keys && !keys.includes(tpl.key)) continue;
+    const id = seedTaskId(role.id, tpl.key);
+    if (appState.tasks[id]) {
+      skipped++;
+      continue;
+    }
+    const { key, ...fields } = tpl;
+    appState.tasks[id] = createTask({ id, roleId: role.id, fields: normalizeFields(fields, { requireTitle: true }), seedKey: `${kind}:${key}`, by });
+    created.push(id);
+  }
+  return { created, skipped };
+}
+
+app.get('/api/admin/tasks', requireAdmin, async (req, res) => {
+  try {
+    await refreshFromCloud();
+    const roles = await knownRoles();
+    const all = [];
+    const out = roles.map(role => {
+      const tasks = sortedRoleTasks(role.id);
+      all.push(...tasks);
+      const kind = roleKind(role.title);
+      const templates = templateStatus(role.id, role.title);
+      return {
+        id: role.id,
+        title: role.title,
+        kind,
+        channel: kind ? KINDS[kind].channel : null,
+        captains: captainsOfRole(role.id),
+        volunteerCount: new Set(appState.claims.filter(c => c.taskId === role.id).map(c => claimPersonKey(c) || c.timestamp)).size,
+        progress: progressOf(tasks),
+        templates: { total: templates.length, available: templates.filter(t => t.state === 'available').length },
+        tasks: tasks.map(publicTask)
+      };
+    });
+    res.json({ roles: out, totals: progressOf(all), serverTime: Date.now() });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.get('/api/admin/tasks/templates/:roleId', requireAdmin, async (req, res) => {
+  try {
+    const role = await requireKnownRole(req.params.roleId);
+    res.json({ roleId: role.id, templates: templateStatus(role.id, role.title) });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.post('/api/admin/tasks', requireAdmin, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const role = await requireKnownRole(body.roleId);
+    checkTaskCapacity(1);
+    const fields = normalizeFields(body, { requireTitle: true });
+    const assignee = resolveAssignee(role.id, body.assigneeKey);
+    const task = createTask({ roleId: role.id, fields, assignee, by: ORGANIZER });
+    appState.tasks[task.id] = task;
+    await persist();
+    broadcastTasksChanged(role.id);
+    res.json({ success: true, task: publicTask(task) });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+// Quick-add several tasks at once, e.g. one title per line.
+app.post('/api/admin/tasks/bulk', requireAdmin, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const role = await requireKnownRole(body.roleId);
+    const items = Array.isArray(body.tasks) ? body.tasks : [];
+    if (!items.length) throw new TaskError(400, 'Add at least one task');
+    if (items.length > TASK_LIMITS.bulk) throw new TaskError(400, `At most ${TASK_LIMITS.bulk} tasks at a time`);
+    checkTaskCapacity(items.length);
+    const assignee = resolveAssignee(role.id, body.assigneeKey);
+    const created = items.map(item => createTask({
+      roleId: role.id,
+      fields: normalizeFields(typeof item === 'string' ? { title: item } : item, { requireTitle: true }),
+      assignee,
+      by: ORGANIZER
+    }));
+    for (const t of created) appState.tasks[t.id] = t;
+    await persist();
+    broadcastTasksChanged(role.id);
+    res.json({ success: true, created: created.length });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+// Seed recommended tasks: { roleId } or { roleId: 'all' }, optional { keys: [...] }.
+app.post('/api/admin/tasks/seed', requireAdmin, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const keys = Array.isArray(body.keys) ? body.keys.map(String) : null;
+    const roles = body.roleId === 'all' ? await getRoles() : [await requireKnownRole(body.roleId)];
+    checkTaskCapacity(roles.reduce((n, r) => n + templatesForTitle(r.title).length, 0));
+    const result = { created: 0, skipped: 0, roles: {} };
+    for (const role of roles) {
+      const r = seedRole(role, keys, ORGANIZER);
+      result.created += r.created.length;
+      result.skipped += r.skipped;
+      result.roles[role.id] = { created: r.created.length, skipped: r.skipped };
+    }
+    if (result.created) {
+      await persist();
+      broadcastTasksChanged(body.roleId === 'all' ? null : body.roleId);
+    }
+    res.json({ success: true, ...result });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+// Edit, move to another role, reassign, change status, and/or add a note.
+app.patch('/api/admin/tasks/:id', requireAdmin, async (req, res) => {
+  try {
+    const task = appState.tasks[req.params.id];
+    if (!task || task.deleted) throw new TaskError(404, 'Task not found');
+    const body = req.body || {};
+    const changes = normalizeFields(body);
+    const oldRole = task.roleId;
+    let roleId = task.roleId;
+    if ('roleId' in body && body.roleId !== task.roleId) {
+      roleId = (await requireKnownRole(body.roleId)).id;
+      changes.roleId = roleId;
+    }
+    if ('assigneeKey' in body) {
+      changes.assignee = resolveAssignee(roleId, body.assigneeKey);
+    } else if (roleId !== oldRole && task.assignee && !captainsOfRole(roleId).some(c => c.key === task.assignee.key)) {
+      changes.assignee = null; // moved to a role this captain does not lead
+    }
+    const note = body.note !== undefined && body.note !== '' ? cleanNote(body.note) : null;
+    const changed = applyUpdate(task, changes, ORGANIZER);
+    if (note) addNote(task, note, ORGANIZER, 'admin');
+    if (changed || note) {
+      await persist();
+      broadcastTasksChanged(oldRole);
+      if (roleId !== oldRole) broadcastTasksChanged(roleId);
+    }
+    res.json({ success: true, task: publicTask(task) });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.delete('/api/admin/tasks/:id', requireAdmin, async (req, res) => {
+  try {
+    const task = appState.tasks[req.params.id];
+    if (!task || task.deleted) throw new TaskError(404, 'Task not found');
+    appState.tasks[task.id] = makeTombstone(task, ORGANIZER);
+    await persist();
+    broadcastTasksChanged(task.roleId);
+    res.json({ success: true });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+// Tasks for the signed-in volunteer's role(s). Captains may update them.
+app.get('/api/team/tasks', requireMember, async (req, res) => {
+  try {
+    await refreshFromCloud();
+    const roles = await knownRoles();
+    const { key: myKey, roleIds, captainRoleIds } = req.person;
+    const out = roles.filter(r => roleIds.has(r.id)).map(role => {
+      const tasks = sortedRoleTasks(role.id);
+      const kind = roleKind(role.title);
+      return {
+        id: role.id,
+        title: role.title,
+        channel: kind ? KINDS[kind].channel : null,
+        canEdit: captainRoleIds.has(role.id),
+        captains: captainsOfRole(role.id).map(c => c.name),
+        progress: progressOf(tasks),
+        // Person keys stay server-side; clients only learn "is this mine".
+        tasks: tasks.map(t => {
+          const { assignee, ...rest } = publicTask(t);
+          return { ...rest, assignee: assignee ? { name: assignee.name, mine: assignee.key === myKey } : null };
+        })
+      };
+    });
+    res.json({ roles: out, serverTime: Date.now() });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+// Captains: change status and/or add a note on a task of a role they captain.
+app.patch('/api/team/tasks/:id', requireMember, async (req, res) => {
+  try {
+    const task = appState.tasks[req.params.id];
+    if (!task || task.deleted) throw new TaskError(404, 'Task not found');
+    if (!req.person.captainRoleIds.has(task.roleId)) {
+      throw new TaskError(403, 'Only a captain of this team can update its tasks.');
+    }
+    const body = req.body || {};
+    const allowed = ['status', 'note'];
+    const extra = Object.keys(body).filter(k => !allowed.includes(k));
+    if (extra.length) throw new TaskError(400, `Captains can only change status or add a note (not ${extra.join(', ')})`);
+    const changes = 'status' in body ? { status: cleanStatus(body.status) } : {};
+    const note = body.note !== undefined && body.note !== '' ? cleanNote(body.note) : null;
+    if (!('status' in body) && !note) throw new TaskError(400, 'Nothing to update');
+    const by = (req.person.claims.find(c => c.taskId === task.roleId) || req.person.claims[0]).displayName;
+    const changed = applyUpdate(task, changes, by);
+    if (note) addNote(task, note, by, 'captain');
+    if (changed || note) {
+      await persist();
+      broadcastTasksChanged(task.roleId);
+    }
+    const { assignee, ...rest } = publicTask(task);
+    res.json({ success: true, task: { ...rest, assignee: assignee ? { name: assignee.name, mine: assignee.key === req.person.key } : null } });
   } catch (err) {
     sendError(res, err);
   }
