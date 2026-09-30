@@ -1,8 +1,8 @@
+require('dotenv').config();
 const crypto = require('crypto');
 const { OAuth2Client } = require('google-auth-library');
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 const nodemailer = require('nodemailer');
-require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
@@ -10,6 +10,7 @@ const path = require('path');
 const https = require('https');
 const { parse } = require('csv-parse/sync');
 const { Storage } = require('@google-cloud/storage');
+const { mergeRemoteState } = require('./lib/stateMerge');
 
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'devving';
@@ -43,22 +44,28 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public'), { setHeaders: (res) => res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private') }));
 
-// Local persistence file path
-const DATA_DIR = path.join(__dirname, 'data');
+// Local persistence file path (DATA_DIR lets local runs and tests use a scratch dir)
+const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(__dirname, 'data');
 const LOCAL_STORAGE_FILE = path.join(DATA_DIR, 'scores.json');
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
 // Google Cloud Storage client initialization
+// DISABLE_GCS=1 keeps local/dev runs from ever touching the production bucket,
+// even when Application Default Credentials are present on the machine.
 let storage = null;
 let bucket = null;
-try {
-  storage = new Storage();
-  bucket = storage.bucket(GCS_BUCKET_NAME);
-  console.log(`[GCS] Initialized client for bucket: ${GCS_BUCKET_NAME}`);
-} catch (err) {
-  console.warn('[GCS] Cloud Storage client initialization warning:', err.message);
+if (process.env.DISABLE_GCS === '1') {
+  console.log('[GCS] Disabled by DISABLE_GCS=1; state is kept on local disk only.');
+} else {
+  try {
+    storage = new Storage();
+    bucket = storage.bucket(GCS_BUCKET_NAME);
+    console.log(`[GCS] Initialized client for bucket: ${GCS_BUCKET_NAME}`);
+  } catch (err) {
+    console.warn('[GCS] Cloud Storage client initialization warning:', err.message);
+  }
 }
 
 // Google Sheets Config (Source of Truth)
@@ -317,11 +324,50 @@ function parseBuilderScores(csvText) {
   }
 }
 
-// Persist data locally to disk
+const DEFAULT_ADMINS = ['gretchen.beach@gmail.com'];
+const GCS_STATE_OBJECT = 'devfest2026_scores_latest.json';
+const SNAPSHOT_INTERVAL_MS = 10 * 60 * 1000; // at most one GCS snapshot per 10 minutes
+let lastSnapshotAt = 0;
+let lastCloudPullAt = 0;
+
+// A state file loaded from disk or GCS may predate newer keys. Make sure the
+// shapes the code relies on exist, without discarding anything already there.
+function ensureStateShape() {
+  if (!Array.isArray(appState.allowedAdmins)) appState.allowedAdmins = [];
+  if (!appState.adminChanges || typeof appState.adminChanges !== 'object') appState.adminChanges = {};
+  for (const email of DEFAULT_ADMINS) {
+    if (!appState.adminChanges[email]) appState.adminChanges[email] = { allowed: true, at: 0 };
+  }
+  // Admins listed only in the legacy array count as granted at time 0, so any
+  // explicit removal recorded in adminChanges wins over them.
+  for (const email of appState.allowedAdmins) {
+    const key = String(email).toLowerCase();
+    if (!appState.adminChanges[key]) appState.adminChanges[key] = { allowed: true, at: 0 };
+  }
+  appState.allowedAdmins = Object.keys(appState.adminChanges).filter(e => appState.adminChanges[e].allowed).sort();
+  if (!Array.isArray(appState.claims)) appState.claims = [];
+  if (!Array.isArray(appState.deletedClaims)) appState.deletedClaims = [];
+  if (!Array.isArray(appState.deletedScores)) appState.deletedScores = [];
+  if (!Array.isArray(appState.scores)) appState.scores = [];
+  if (!appState.tasks || typeof appState.tasks !== 'object' || Array.isArray(appState.tasks)) appState.tasks = {};
+}
+
+// Merge a copy of the state read from GCS into memory (see lib/stateMerge.js).
+function applyRemoteState(remote) {
+  ensureStateShape();
+  const { tasksChanged } = mergeRemoteState(appState, remote);
+  ensureStateShape();
+  if (tasksChanged) broadcastTasksChanged(null);
+}
+
+// Persist data locally to disk. Written to a temp file and renamed so a crash
+// mid-write can never leave a truncated state file behind.
 async function saveToLocalDisk() {
   try {
-    await fs.promises.writeFile(LOCAL_STORAGE_FILE, JSON.stringify(appState, null, 2), 'utf8');
-    console.log(`[Local Disk] Saved ${appState.scores.length} score entries.`);
+    const tmp = `${LOCAL_STORAGE_FILE}.${process.pid}.tmp`;
+    await fs.promises.writeFile(tmp, JSON.stringify(appState, null, 2), 'utf8');
+    await fs.promises.rename(tmp, LOCAL_STORAGE_FILE);
+    console.log(`[Local Disk] Saved ${appState.scores.length} score entries, ${Object.keys(appState.tasks || {}).length} tasks.`);
   } catch (err) {
     console.error('[Local Disk Error]', err);
   }
@@ -334,7 +380,8 @@ async function loadFromLocalDisk() {
     const loaded = JSON.parse(raw);
     if (loaded && Array.isArray(loaded.scores)) {
       appState = loaded;
-      console.log(`[Local Disk] Loaded ${appState.scores.length} entries from cache.`);
+      ensureStateShape();
+      console.log(`[Local Disk] Loaded ${appState.scores.length} entries, ${Object.keys(appState.tasks).length} tasks from cache.`);
       return true;
     }
   } catch (err) {
@@ -345,80 +392,68 @@ async function loadFromLocalDisk() {
   return false;
 }
 
-// Sync to Cloud Storage
-async function backupToCloudStorage() {
-  if (!bucket) {
-    appState.gcsStatus = "GCS bucket not initialized";
-    return false;
+// Read-merge-write against GCS. The upload is conditional on the object's
+// generation not having changed since we read it, so if another instance saved
+// in between we re-read, re-merge and try again instead of overwriting its data.
+async function writeStateToCloud() {
+  const MAX_ATTEMPTS = 5;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const file = bucket.file(GCS_STATE_OBJECT);
+    let generation = 0; // 0 = "only create if it does not exist yet"
+    try {
+      const [meta] = await file.getMetadata();
+      generation = Number(meta.generation);
+    } catch (err) {
+      if (err.code !== 404) throw err;
+    }
+    if (generation) {
+      const [contents] = await bucket.file(GCS_STATE_OBJECT, { generation }).download();
+      let remote = null;
+      try {
+        remote = JSON.parse(contents.toString('utf8'));
+      } catch (e) {
+        console.error('[GCS] Remote state is not valid JSON and will be replaced (older snapshots are kept):', e.message);
+      }
+      // If merging throws, the error propagates and nothing is uploaded, so a
+      // bad merge can never overwrite the remote copy with less data.
+      if (remote) applyRemoteState(remote);
+    }
+    lastCloudPullAt = Date.now();
+
+    const dataToSave = JSON.stringify(appState, null, 2);
+    try {
+      await file.save(dataToSave, {
+        contentType: 'application/json',
+        resumable: false,
+        metadata: { cacheControl: 'no-cache', metadata: { source: 'devfest-leaderboard-cloudrun' } },
+        preconditionOpts: { ifGenerationMatch: generation }
+      });
+    } catch (err) {
+      if (err.code === 412 && attempt < MAX_ATTEMPTS) {
+        console.warn(`[GCS] State changed during backup (attempt ${attempt}); re-merging.`);
+        continue;
+      }
+      throw err;
+    }
+
+    if (Date.now() - lastSnapshotAt >= SNAPSHOT_INTERVAL_MS) {
+      lastSnapshotAt = Date.now();
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      await bucket.file(`snapshots/devfest_scores_${timestamp}.json`).save(dataToSave, { contentType: 'application/json', resumable: false });
+    }
+    return true;
   }
+  return false;
+}
+
+async function runBackup() {
   try {
     appState.gcsStatus = "Backing up...";
-    
-    // FIRST: Read latest from GCS so we don't overwrite other instances' changes!
-    const gcsFileRef = bucket.file('devfest2026_scores_latest.json');
-    const [exists] = await gcsFileRef.exists();
-    if (exists) {
-      try {
-        const [contents] = await gcsFileRef.download();
-        const remoteState = JSON.parse(contents.toString('utf8'));
-        
-        // Merge allowedAdmins (union)
-        if (remoteState.allowedAdmins) {
-          appState.allowedAdmins = [...new Set([...appState.allowedAdmins, ...remoteState.allowedAdmins])];
-        }
-        
-        // Merge claims (union by timestamp)
-        if (remoteState.claims) {
-          const allClaims = [...appState.claims, ...remoteState.claims];
-          // Remove duplicates based on timestamp
-          const uniqueClaims = [];
-          const seen = new Set();
-          for (let c of allClaims) {
-            if (!seen.has(c.timestamp)) {
-              seen.add(c.timestamp);
-              uniqueClaims.push(c);
-            } else {
-              // If duplicate exists, prefer the one where isCaptain might be true
-              if (c.isCaptain) {
-                const idx = uniqueClaims.findIndex(uc => uc.timestamp === c.timestamp);
-                if (idx > -1) uniqueClaims[idx].isCaptain = true;
-              }
-            }
-          }
-          appState.claims = uniqueClaims;
-        }
-        
-        // Merge instructions
-        if (remoteState.volunteerInstructions && !appState.volunteerInstructions) {
-          appState.volunteerInstructions = remoteState.volunteerInstructions;
-        }
-      } catch(e) {
-        console.error("Failed to merge remote state:", e);
-      }
-    }
-    
-    const dataToSave = JSON.stringify(appState, null, 2);
-    
-    // Save latest
-    
-    await gcsFileRef.save(dataToSave, {
-      contentType: 'application/json',
-      metadata: {
-        cacheControl: 'no-cache',
-        source: 'devfest-leaderboard-cloudrun'
-      }
-    });
-
-    // Save timestamped snapshot
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const snapshotFile = bucket.file(`snapshots/devfest_scores_${timestamp}.json`);
-    await snapshotFile.save(dataToSave, {
-      contentType: 'application/json'
-    });
-
+    const ok = await writeStateToCloud();
+    if (!ok) throw new Error('Could not save after repeated concurrent updates');
     appState.gcsBackupTime = new Date().toISOString();
     appState.gcsStatus = "Active & Synced";
-    console.log(`[GCS] Successfully backed up scores to gs://${GCS_BUCKET_NAME}/devfest2026_scores_latest.json`);
+    console.log(`[GCS] Successfully backed up state to gs://${GCS_BUCKET_NAME}/${GCS_STATE_OBJECT}`);
     return true;
   } catch (err) {
     console.error('[GCS Backup Error]', err);
@@ -427,11 +462,36 @@ async function backupToCloudStorage() {
   }
 }
 
-// Restore from Cloud Storage on container cold start if needed
+// Sync to Cloud Storage. Calls are coalesced: while one backup runs, any number
+// of new requests share a single follow-up backup that starts after it, so
+// every caller's change is included in a backup that finishes after its call.
+let backupRunning = null;
+let backupPending = null;
+function startBackup() {
+  backupRunning = runBackup().finally(() => { backupRunning = null; });
+  return backupRunning;
+}
+function backupToCloudStorage() {
+  if (!bucket) {
+    appState.gcsStatus = "GCS bucket not initialized";
+    return Promise.resolve(false);
+  }
+  if (!backupRunning) return startBackup();
+  if (!backupPending) {
+    backupPending = backupRunning.then(() => {
+      backupPending = null;
+      return startBackup();
+    });
+  }
+  return backupPending;
+}
+
+// Restore from Cloud Storage on container cold start. Always merges (never
+// replaces), so it is safe to run even when the local disk already has data.
 async function restoreFromCloudStorage() {
   if (!bucket) return false;
   try {
-    const file = bucket.file('devfest2026_scores_latest.json');
+    const file = bucket.file(GCS_STATE_OBJECT);
     const [exists] = await file.exists();
     if (!exists) {
       console.log('[GCS] No existing backup found in bucket yet.');
@@ -439,21 +499,42 @@ async function restoreFromCloudStorage() {
     }
     const [contents] = await file.download();
     const parsed = JSON.parse(contents.toString('utf8'));
-    if (parsed && Array.isArray(parsed.scores) && parsed.scores.length > 0) {
-      console.log(`[GCS] Restored ${parsed.scores.length} scores from Cloud Storage!`);
-      // Merge with appState
+    if (!parsed || typeof parsed !== 'object') return false;
+    if (Array.isArray(parsed.scores) && parsed.scores.length > 0 && appState.scores.length === 0) {
       appState.scores = parsed.scores;
       appState.gcsBackupTime = parsed.gcsBackupTime;
-      appState.gcsStatus = "Restored from GCS";
-      for (const k of ['claims', 'allowedAdmins', 'volunteerInstructions', 'roleInstructions', 'captainInstructions']) {
-        if (parsed[k]) appState[k] = parsed[k];
-      }
-      return true;
     }
+    applyRemoteState(parsed);
+    lastCloudPullAt = Date.now();
+    appState.gcsStatus = "Restored from GCS";
+    console.log(`[GCS] Restored state: ${appState.scores.length} scores, ${appState.claims.length} volunteers, ${Object.keys(appState.tasks).length} tasks.`);
+    return true;
   } catch (err) {
     console.warn('[GCS Restore Warning]', err.message);
   }
   return false;
+}
+
+// Pull other instances' changes before serving live data (at most every few
+// seconds per instance), so a captain and the admin see the same board even
+// when their requests land on different Cloud Run instances.
+let cloudPullInFlight = null;
+function refreshFromCloud(maxAgeMs = 5000) {
+  if (!bucket || Date.now() - lastCloudPullAt < maxAgeMs) return Promise.resolve();
+  if (!cloudPullInFlight) {
+    cloudPullInFlight = (async () => {
+      try {
+        const [contents] = await bucket.file(GCS_STATE_OBJECT).download();
+        applyRemoteState(JSON.parse(contents.toString('utf8')));
+      } catch (err) {
+        if (err.code !== 404) console.warn('[GCS Refresh Warning]', err.message);
+      } finally {
+        lastCloudPullAt = Date.now();
+        cloudPullInFlight = null;
+      }
+    })();
+  }
+  return cloudPullInFlight;
 }
 
 // Sync from Google Sheets (Source of Truth)
@@ -628,9 +709,11 @@ app.delete('/api/scores/:id', requireAdmin, async (req, res) => {
   const initialLength = appState.scores.length;
   appState.scores = appState.scores.filter(s => s.id !== id);
   if (appState.scores.length < initialLength) {
+    appState.deletedScores.push(id);
     appState.lastSyncTime = new Date().toISOString();
+    await saveToLocalDisk();
     await backupToCloudStorage();
-    broadcast('sync', { message: 'A score was deleted.' });
+    broadcastEvent('scores_updated', appState.scores);
     res.json({ success: true });
   } else {
     res.status(404).json({ success: false, error: 'Score not found' });
@@ -690,6 +773,12 @@ function broadcastEvent(eventType, payload) {
   });
 }
 
+// The SSE stream is public, so task events carry no task content: clients
+// refetch through their authenticated endpoints when they see one.
+function broadcastTasksChanged(roleId) {
+  broadcastEvent('tasks_changed', { roleId: roleId || null, at: Date.now() });
+}
+
 app.get('/api/scores', (req, res) => {
   res.json({
     count: appState.scores.length,
@@ -735,6 +824,7 @@ app.post('/api/scores', async (req, res) => {
     );
 
     if (existingIndex >= 0) {
+      if (appState.scores[existingIndex].id !== newEntry.id) appState.deletedScores.push(appState.scores[existingIndex].id);
       appState.scores[existingIndex] = newEntry;
       console.log(`[Score Updated] ${newEntry.judgeName} re-scored ${newEntry.teamName}: ${newEntry.totalScore} pts`);
     } else {
@@ -1365,27 +1455,58 @@ app.post('/api/blast', requireAdmin, (req, res) => {
 
 app.get('*', (req, res) => { res.sendFile(path.join(__dirname, 'public', 'index.html')); });
 
-app.listen(PORT, async () => {
+// State is loaded and merged with GCS *before* the port opens, so no request
+// can write to a half-initialised state that the restore would then replace.
+async function start({ port = PORT } = {}) {
+  // Step 1: Load local disk cache if available
+  await loadFromLocalDisk();
+  ensureStateShape();
+
+  // Step 2: Merge the latest state from GCS. This runs on every cold start: the
+  // container image ships a data/scores.json, so "local is empty" is not a
+  // reliable signal that a restore is needed.
+  await restoreFromCloudStorage();
+  ensureStateShape();
+
+  const server = await new Promise(resolve => {
+    const s = app.listen(port, () => resolve(s));
+  });
   console.log(`=======================================================`);
   console.log(`🚀 DevFest Bay Area 2026 Leaderboard & Judging App`);
-  console.log(`📍 Running on http://localhost:${PORT}`);
-  console.log(`☁️ Cloud Storage Bucket: gs://${GCS_BUCKET_NAME}`);
+  console.log(`📍 Running on http://localhost:${server.address().port}`);
+  console.log(`☁️ Cloud Storage Bucket: ${bucket ? 'gs://' + GCS_BUCKET_NAME : 'disabled'}`);
   console.log(`📊 Google Sheet Source: ${SHEET_CONFIG.sheetId}`);
   console.log(`=======================================================`);
 
-  // Step 1: Load local disk cache if available
-  await loadFromLocalDisk();
-
-  // Step 2: Try to restore latest from GCS if local was empty
-  if (appState.scores.length === 0) {
-    await restoreFromCloudStorage();
+  if (process.env.DISABLE_SHEETS_SYNC === '1') {
+    console.log('[Sync] Google Sheets sync disabled by DISABLE_SHEETS_SYNC=1');
+    return server;
   }
-
   // Step 3: Initial sync from Google Sheets (source of truth)
   await syncFromGoogleSheets();
 
   // Background recurring sync every 45 seconds to keep live with Google Sheet
-  setInterval(() => {
+  const timer = setInterval(() => {
     syncFromGoogleSheets().catch(e => console.warn('[Auto-sync Interval Error]', e.message));
   }, 45000);
-});
+  server.on('close', () => clearInterval(timer));
+  return server;
+}
+
+if (require.main === module) {
+  start().catch(err => {
+    console.error('[Startup Error]', err);
+    process.exit(1);
+  });
+}
+
+// Exported for tests (node test/*.test.js); not used in production.
+module.exports = {
+  app,
+  start,
+  getState: () => appState,
+  backupToCloudStorage,
+  saveToLocalDisk,
+  _setBucketForTests: b => { bucket = b; lastCloudPullAt = 0; },
+  _googleClient: googleClient
+};
