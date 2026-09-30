@@ -93,11 +93,36 @@
     return 'desktop';
   }
 
-  // iOS: sms://open?addresses=+1…,+1…&body=…   Android: sms:+1…,+1…?body=…
+  // Link formats that open a prefilled message on the phone's own Messages app:
+  //   iOS (Messages, iOS 8+):  sms://open?addresses=+1…,+1…&body=…
+  //     The only iOS form that takes several recipients; a plain "sms:a,b" opens
+  //     a message to the first number only.
+  //   Android (Google Messages, Samsung Messages, AOSP):  sms:+1…;+1…?body=…
+  //     RFC 5724 query-string body. ';' is the separator every Android messaging
+  //     app splits on (Samsung ignores everything after a ','), so it is used here.
+  // The body is encodeURIComponent'd, so & ? # + = and newlines (%0A) and emoji
+  // (UTF-8 %XX) arrive intact instead of cutting the message short. Numbers are
+  // already normalized to +<digits>, which needs no escaping.
   function smsHref(platform, numbers, message) {
-    const to = numbers.join(',');
-    const body = encodeURIComponent(message);
-    return platform === 'ios' ? `sms://open?addresses=${to}&body=${body}` : `sms:${to}?body=${body}`;
+    const body = encodeURIComponent(String(message == null ? '' : message).replace(/\r\n?/g, '\n'));
+    if (platform === 'ios') return `sms://open?addresses=${numbers.join(',')}&body=${body}`;
+    return `sms:${numbers.join(';')}?body=${body}`;
+  }
+
+  // Browser copy of lib/phone.js normalizePhone (the tests check they agree).
+  function normalizePhone(raw) {
+    const s = String(raw == null ? '' : raw).trim();
+    if (!s) return null;
+    const intl = s.startsWith('+') || s.startsWith('00');
+    let digits = s.replace(/\D/g, '');
+    if (s.startsWith('00')) digits = digits.slice(2);
+    if (!intl || digits.startsWith('1')) {
+      if (digits.length === 11 && digits.startsWith('1')) digits = digits.slice(1);
+      if (digits.length === 10 && /^[2-9]\d{2}[2-9]/.test(digits)) return '+1' + digits;
+      if (!intl) return null;
+      if (digits.length === 10 || digits.length === 11) return null;
+    }
+    return digits.length >= 8 && digits.length <= 15 ? '+' + digits : null;
   }
 
   function smsGroups(numbers, size = SMS_GROUP_SIZE) {
@@ -117,7 +142,7 @@
     return links;
   }
 
-  const api = { init, sms: { SMS_GROUP_SIZE, smsPlatform, smsHref, smsGroups, smsLinks } };
+  const api = { init, sms: { SMS_GROUP_SIZE, smsPlatform, smsHref, smsGroups, smsLinks, normalizePhone } };
   if (typeof window !== 'undefined') window.DevFestBlast = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })();

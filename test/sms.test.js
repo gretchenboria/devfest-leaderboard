@@ -43,16 +43,18 @@ test('chunk splits into groups of at most n', () => {
   assert.deepEqual(chunk([], 20), []);
 });
 
-test('sms links: iOS and Android formats, URL-encoded body, groups of 20', () => {
+test('sms links: iOS and Android formats, groups of 20', () => {
   const nums = ['+16505550101', '+16505550102'];
   const msg = 'Awards in 10 min & pizza? #1 "now"\nRm 109';
   assert.equal(sms.smsHref('ios', nums, msg), 'sms://open?addresses=+16505550101,+16505550102&body=' + encodeURIComponent(msg));
-  assert.equal(sms.smsHref('android', nums, msg), 'sms:+16505550101,+16505550102?body=' + encodeURIComponent(msg));
-  assert.doesNotMatch(sms.smsHref('ios', nums, msg), /[ \n"#]|&(?!body=)/);
+  assert.equal(sms.smsHref('android', nums, msg), 'sms:+16505550101;+16505550102?body=' + encodeURIComponent(msg));
+  assert.equal(sms.smsHref('ios', ['+16505550101'], 'hi'), 'sms://open?addresses=+16505550101&body=hi');
+  assert.equal(sms.smsHref('android', ['+16505550101'], 'hi'), 'sms:+16505550101?body=hi');
 
   assert.equal(sms.smsPlatform('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)'), 'ios');
   assert.equal(sms.smsPlatform('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)', 5), 'ios'); // iPadOS
   assert.equal(sms.smsPlatform('Mozilla/5.0 (Linux; Android 15; Pixel 9)'), 'android');
+  assert.equal(sms.smsPlatform('Mozilla/5.0 (Linux; Android 14; SM-S928U) SamsungBrowser/25.0'), 'android');
   assert.equal(sms.smsPlatform('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)', 0), 'desktop');
 
   const many = Array.from({ length: 45 }, (_, i) => '+1650555' + String(1000 + i));
@@ -61,6 +63,58 @@ test('sms links: iOS and Android formats, URL-encoded body, groups of 20', () =>
   const desk = sms.smsLinks(many, 'hi', 'desktop');
   assert.equal(desk.length, 6);
   assert.deepEqual([...new Set(desk.map(l => l.platform))], ['ios', 'android']);
+});
+
+// Parse a link the way the phone does: split recipients from the query, then
+// percent-decode the body. Special characters must survive the round trip.
+function parseSms(href) {
+  if (href.startsWith('sms://open?')) {
+    const q = href.slice('sms://open?'.length);
+    const parts = Object.fromEntries(q.split('&').map(kv => { const i = kv.indexOf('='); return [kv.slice(0, i), kv.slice(i + 1)]; }));
+    return { to: parts.addresses.split(','), body: decodeURIComponent(parts.body) };
+  }
+  const m = /^sms:([^?]*)\?body=(.*)$/.exec(href);
+  return { to: m[1].split(';'), body: decodeURIComponent(m[2]) };
+}
+
+test('sms link encoding: & ? # = + % emoji, newlines and CRLF survive; nothing unescaped leaks', () => {
+  const nums = ['+16505550101', '+14155550102', '+442079460958'];
+  const msg = 'Pizza & drinks? Room #109 = 1st floor, 50% off + free 🎉🍕\nSee you there!\r\nLine 3 — “quotes” \'single\' <tag> /path\\';
+  for (const p of ['ios', 'android']) {
+    const href = sms.smsHref(p, nums, msg);
+    const parsed = parseSms(href);
+    assert.deepEqual(parsed.to, nums, p);
+    assert.equal(parsed.body, msg.replace(/\r\n/g, '\n'), p);
+    // Only the structural separators are raw; the body has no raw & ? # space newline.
+    const body = href.slice(href.indexOf('body=') + 5);
+    assert.doesNotMatch(body, /[&?#=+ \n\r<>"]/, p);
+    assert.match(body, /%0A/);
+    assert.doesNotMatch(body, /%0D/);
+    assert.equal(href.split('body=').length, 2, p);
+  }
+  // Empty message still yields a well-formed link.
+  assert.equal(sms.smsHref('ios', nums.slice(0, 1), ''), 'sms://open?addresses=+16505550101&body=');
+});
+
+test('sms: browser normalizePhone matches lib/phone.js', () => {
+  const samples = ['(650) 555-0102', '650.555.0102', '1-650-555-0102', '+1 (650) 555-0102', '+44 20 7946 0958', '0044 20 7946 0958',
+    '', null, 'N/A', '555-0102', '123-456-7890', '650-155-0102', '+1 123 456 7890', '6505550102 ext 4', '+123', 'call me', '  4155550199  '];
+  for (const s of samples) assert.equal(sms.normalizePhone(s), normalizePhone(s), String(s));
+});
+
+test('admin page: text card is volunteers-only, uses real links, no judge items', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'admin.html'), 'utf8');
+  const card = html.slice(html.indexOf('id="sms-card"'), html.indexOf('<a href="/volunteer" target="_blank"'));
+  assert.ok(card.includes('Send by text message'));
+  assert.ok(card.includes('data-lucide="smartphone"'));
+  assert.match(card, /Sends from your own phone number; recipients may see each other/);
+  assert.doesNotMatch(card, /judge/i);
+  assert.doesNotMatch(card, /<select/);
+  assert.ok(html.includes("/api/admin/sms/recipients?audience=volunteers"));
+  assert.doesNotMatch(html, /window\.open\(/);
+  // Email/banner blast controls unchanged.
+  for (const id of ['data-action="send-blast"', 'data-action="test-blast"', 'id="blast-audience"', '<option value="judges">', '<option value="both">'])
+    assert.ok(html.includes(id), id);
 });
 
 test('sms recipients endpoint: admin only, decrypted, normalized, deduped, grouped', async () => {

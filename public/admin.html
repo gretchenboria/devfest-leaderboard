@@ -10,6 +10,10 @@
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 
   <style>
+    .sms-go { background: #059669; color: #fff; }
+    .sms-go:hover { background: #047857; }
+    .sms-go[aria-disabled="true"] { background: #e5e7eb; color: #6b7280; pointer-events: none; }
+    .sms-plat[aria-pressed="true"] { background: #059669; color: #fff; border-color: #059669; }
     @media print {
       body * {
         visibility: hidden;
@@ -233,17 +237,52 @@
         <div class="flex flex-wrap gap-2">
           <button data-action="send-blast" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-6 rounded-xl text-sm transition shadow-sm shadow-red-200">Send Blast</button>
           <button data-action="test-blast" class="bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-2 px-4 rounded-xl text-sm transition">Send test to me</button>
-          <button data-action="sms-blast" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-xl text-sm transition">Text from my phone</button>
+          <a href="#sms-card" class="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-xl text-sm transition"><i data-lucide="smartphone" class="w-4 h-4"></i> Text from my phone &darr;</a>
         </div>
         <p id="blast-result" class="hidden mt-3 text-sm rounded-lg px-3 py-2 border"></p>
-        <div id="sms-panel" class="hidden mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950">
-          <p class="text-xs font-bold mb-2">Sends from your own phone number; recipients may see each other in the group text.</p>
-          <p id="sms-summary" class="text-xs mb-3"></p>
-          <div id="sms-links" class="flex flex-col gap-2 mb-3"></div>
-          <div class="flex flex-wrap gap-2">
-            <button data-action="sms-copy-numbers" class="bg-white hover:bg-gray-100 border border-emerald-300 text-emerald-900 font-bold py-1.5 px-3 rounded-lg text-xs">Copy all numbers</button>
-            <button data-action="sms-copy-message" class="bg-white hover:bg-gray-100 border border-emerald-300 text-emerald-900 font-bold py-1.5 px-3 rounded-lg text-xs">Copy message</button>
-          </div>
+      </div>
+
+      <!-- Send by text message (volunteers only) -->
+      <div id="sms-card" class="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border-2 border-emerald-300 mb-6 scroll-mt-4">
+        <h2 class="text-lg font-bold flex items-center gap-2 mb-1"><i data-lucide="smartphone" class="text-emerald-600"></i> Send by text message</h2>
+        <p id="sms-count" class="text-2xl font-extrabold text-emerald-700 leading-tight">Loading volunteer numbers…</p>
+        <p id="sms-skipped" class="text-xs text-gray-500 mb-2"></p>
+        <p class="text-xs font-bold rounded-lg px-3 py-2 mb-4 bg-amber-50 border border-amber-200 text-amber-900">Sends from your own phone number; recipients may see each other in the group text. Volunteers only. Open this page on your phone to send.</p>
+
+        <ol class="space-y-5">
+          <li>
+            <div class="flex items-center gap-2 font-bold text-sm mb-2"><span class="w-7 h-7 shrink-0 rounded-full bg-emerald-600 text-white flex items-center justify-center">1</span> Type your message</div>
+            <textarea id="sms-input" rows="3" maxlength="1000" class="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-base focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="e.g. Awards start in 10 minutes on the Main Stage (Rm 109+104)."></textarea>
+            <div class="flex justify-between items-center text-[11px] text-gray-400 mt-1">
+              <button type="button" data-action="sms-use-blast" class="text-emerald-700 font-bold hover:underline">Use the blast message above</button>
+              <span><span id="sms-chars">0</span>/1000</span>
+            </div>
+          </li>
+          <li>
+            <div class="flex items-center gap-2 font-bold text-sm mb-2"><span class="w-7 h-7 shrink-0 rounded-full bg-emerald-600 text-white flex items-center justify-center">2</span> Text a test to yourself</div>
+            <div class="flex flex-col sm:flex-row gap-2">
+              <input id="sms-test-number" type="tel" inputmode="tel" autocomplete="tel" class="flex-1 min-w-0 bg-gray-50 border border-gray-200 rounded-xl p-3 text-base focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Your mobile number, e.g. (650) 555-0123">
+              <a id="sms-test-link" class="sms-go block text-center font-bold py-3 px-4 rounded-xl text-base">Text a test to me</a>
+            </div>
+            <p id="sms-test-hint" class="text-xs text-gray-500 mt-1">Your number stays on this device only.</p>
+          </li>
+          <li>
+            <div class="flex items-center gap-2 font-bold text-sm mb-2"><span class="w-7 h-7 shrink-0 rounded-full bg-emerald-600 text-white flex items-center justify-center">3</span> Tap each group, then press Send in Messages</div>
+            <div class="flex items-center gap-2 text-xs text-gray-600 mb-2">
+              <span>Phone:</span>
+              <button type="button" data-action="sms-platform" data-platform="ios" class="sms-plat px-3 py-1 rounded-full border font-bold">iPhone</button>
+              <button type="button" data-action="sms-platform" data-platform="android" class="sms-plat px-3 py-1 rounded-full border font-bold">Android</button>
+            </div>
+            <div id="sms-links" class="flex flex-col gap-2"></div>
+            <details id="sms-fallback" class="mt-3 text-sm">
+              <summary class="cursor-pointer font-bold text-emerald-800">Group text not opening? Text one at a time</summary>
+              <div id="sms-single-links" class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2"></div>
+            </details>
+          </li>
+        </ol>
+        <div class="flex flex-wrap gap-2 mt-4">
+          <button data-action="sms-copy-numbers" class="bg-white hover:bg-gray-100 border border-emerald-300 text-emerald-900 font-bold py-1.5 px-3 rounded-lg text-xs">Copy all numbers</button>
+          <button data-action="sms-copy-message" class="bg-white hover:bg-gray-100 border border-emerald-300 text-emerald-900 font-bold py-1.5 px-3 rounded-lg text-xs">Copy message</button>
         </div>
       </div>
 
@@ -504,6 +543,7 @@
       loadScores();
       loadJudges();
       loadEmailStatus();
+      loadSmsRecipients();
       connectLive();
       setInterval(loadBoard, 30000); // fallback if the live stream drops
     }
@@ -924,66 +964,96 @@
     }
     document.getElementById('blast-input').addEventListener('input', e => {
       document.getElementById('blast-count').textContent = e.target.value.length;
-      if (smsState) renderSmsLinks();
-    });
-    document.getElementById('blast-audience').addEventListener('change', () => {
-      smsState = null;
-      document.getElementById('sms-panel').classList.add('hidden');
     });
 
-    // "Text from my phone": group-text links with the numbers and message filled in.
-    let smsState = null; // { numbers, counts, judgesEmailOnly, audience }
+    // "Send by text message" (volunteers only): real <a href="sms:…"> links that
+    // hand off to the phone's Messages app with recipients and message filled in.
+    // Links are plain anchors (no data-action, no preventDefault, no window.open).
     const SMS = window.DevFestBlast.sms;
-    const smsPlatform = SMS.smsPlatform(navigator.userAgent, navigator.maxTouchPoints);
-    function renderSmsLinks() {
-      const message = document.getElementById('blast-input').value.trim();
+    const SMS_TEST_KEY = 'devfest_sms_test_number';
+    const smsDetected = SMS.smsPlatform(navigator.userAgent, navigator.maxTouchPoints);
+    let smsPlatform = smsDetected === 'desktop' ? 'ios' : smsDetected;
+    let smsNumbers = null;
+    const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+    function smsMessage() { return document.getElementById('sms-input').value.trim(); }
+    function setSmsLink(a, href, label) {
+      a.textContent = label;
+      if (href) { a.href = href; a.removeAttribute('aria-disabled'); }
+      else { a.removeAttribute('href'); a.setAttribute('aria-disabled', 'true'); }
+    }
+    function renderSms() {
+      const message = smsMessage();
+      document.getElementById('sms-chars').textContent = document.getElementById('sms-input').value.length;
+      document.querySelectorAll('.sms-plat').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.platform === smsPlatform)));
+
+      // Step 2: test to my own number.
+      const raw = document.getElementById('sms-test-number').value;
+      const mine = SMS.normalizePhone(raw);
+      const hint = document.getElementById('sms-test-hint');
+      if (raw.trim() && !mine) hint.textContent = 'Enter a full mobile number with area code.';
+      else if (!message) hint.textContent = 'Type a message in step 1 first.';
+      else hint.textContent = 'Opens Messages with just your number. Your number stays on this device only.';
+      setSmsLink(document.getElementById('sms-test-link'), mine && message ? SMS.smsHref(smsPlatform, [mine], message) : null, 'Text a test to me');
+
+      // Step 3: one big button per group of up to 20.
       const box = document.getElementById('sms-links');
-      box.replaceChildren();
-      if (!message) {
+      const singles = document.getElementById('sms-single-links');
+      box.replaceChildren(); singles.replaceChildren();
+      if (!smsNumbers) return;
+      if (!smsNumbers.length) {
         const p = document.createElement('p');
-        p.className = 'text-xs font-bold text-red-700';
-        p.textContent = 'Type a message first.';
+        p.className = 'text-sm text-gray-500';
+        p.textContent = 'No volunteer phone numbers on file yet.';
         box.append(p);
         return;
       }
-      const links = SMS.smsLinks(smsState.numbers, message, smsPlatform);
-      for (const l of links) {
-        const a = document.createElement('a');
-        a.href = l.href;
-        a.dataset.smsPlatform = l.platform;
-        a.className = 'block text-center bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-xl text-sm';
-        const tag = smsPlatform === 'desktop' ? (l.platform === 'ios' ? ' — iPhone' : ' — Android') : '';
-        a.textContent = `Open group text (${l.group}/${l.total})${tag} · ${l.count} number${l.count === 1 ? '' : 's'}`;
-        box.append(a);
+      if (!message) {
+        const p = document.createElement('p');
+        p.className = 'text-sm font-bold text-red-700';
+        p.textContent = 'Type a message in step 1 to turn on the group buttons.';
+        box.append(p);
       }
+      const groups = SMS.smsGroups(smsNumbers);
+      groups.forEach((g, i) => {
+        const a = document.createElement('a');
+        a.className = 'sms-go sms-group block w-full text-center font-bold py-4 px-4 rounded-2xl text-base';
+        setSmsLink(a, message ? SMS.smsHref(smsPlatform, g, message) : null,
+          `Text group ${i + 1} of ${groups.length} · ${plural(g.length, 'volunteer')}`);
+        box.append(a);
+      });
+      smsNumbers.forEach((n, i) => {
+        const a = document.createElement('a');
+        a.className = 'sms-go sms-single block text-center font-bold py-2 px-3 rounded-xl text-sm';
+        setSmsLink(a, message ? SMS.smsHref(smsPlatform, [n], message) : null, `Volunteer ${i + 1} · …${n.slice(-4)}`);
+        singles.append(a);
+      });
     }
-    async function openSmsPanel(btn) {
-      const message = document.getElementById('blast-input').value.trim();
-      if (!message) return toast('Type a message first', false);
-      const audience = document.getElementById('blast-audience').value;
-      btn.disabled = true;
+    async function loadSmsRecipients() {
+      const count = document.getElementById('sms-count');
       try {
-        const r = await api('/api/admin/sms/recipients?audience=' + encodeURIComponent(audience));
-        smsState = { numbers: r.numbers, counts: r.counts, judgesEmailOnly: r.judgesEmailOnly, audience };
+        const r = await api('/api/admin/sms/recipients?audience=volunteers');
+        smsNumbers = r.numbers;
         const c = r.counts;
-        const parts = [];
-        if (audience !== 'judges') {
-          parts.push(`${c.numbers} volunteer number${c.numbers === 1 ? '' : 's'} in ${c.groups} group${c.groups === 1 ? '' : 's'} of up to ${r.groupSize}`);
-          const extra = [];
-          if (c.duplicates) extra.push(`${c.duplicates} duplicate${c.duplicates === 1 ? '' : 's'} removed`);
-          if (c.invalid) extra.push(`${c.invalid} invalid skipped`);
-          if (c.missing) extra.push(`${c.missing} sign-up${c.missing === 1 ? '' : 's'} without a phone`);
-          if (extra.length) parts.push(extra.join(', '));
-        }
-        if (r.judgesEmailOnly) parts.push('Judges: email only (no phone numbers on file)');
-        if (smsPlatform === 'desktop') parts.push('On a computer: both iPhone and Android links are shown; open this page on your phone to text');
-        document.getElementById('sms-summary').textContent = parts.join('. ') + '.';
-        document.getElementById('sms-panel').classList.remove('hidden');
-        renderSmsLinks();
+        count.textContent = `${plural(c.numbers, 'volunteer')} with phone numbers`;
+        const skipped = [];
+        if (c.invalid) skipped.push(`${c.invalid} number${c.invalid === 1 ? '' : 's'} not textable (e.g. missing area code)`);
+        if (c.missing) skipped.push(`${plural(c.missing, 'sign-up')} without a phone`);
+        if (c.duplicates) skipped.push(`${plural(c.duplicates, 'duplicate')} removed`);
+        document.getElementById('sms-skipped').textContent =
+          `${plural(c.groups, 'group text')} of up to ${r.groupSize}` + (skipped.length ? `. Skipped: ${skipped.join(', ')}.` : '.');
       } catch (e) {
-        showBlastResult(e.message, 'err');
-      } finally { btn.disabled = false; }
+        count.textContent = 'Could not load phone numbers';
+        document.getElementById('sms-skipped').textContent = e.message;
+      }
+      renderSms();
     }
+    try { document.getElementById('sms-test-number').value = localStorage.getItem(SMS_TEST_KEY) || ''; } catch (e) { /* storage unavailable */ }
+    document.getElementById('sms-input').addEventListener('input', renderSms);
+    document.getElementById('sms-test-number').addEventListener('input', e => {
+      if (SMS.normalizePhone(e.target.value)) { try { localStorage.setItem(SMS_TEST_KEY, e.target.value.trim()); } catch (err) { /* ignore */ } }
+      renderSms();
+    });
+    renderSms();
     async function copyText(text, what) {
       try {
         await navigator.clipboard.writeText(text);
@@ -1155,13 +1225,17 @@
       },
       'send-blast': el => sendBlast(el, false),
       'test-blast': el => sendBlast(el, true),
-      'sms-blast': el => openSmsPanel(el),
+      'sms-platform': el => { smsPlatform = el.dataset.platform; renderSms(); },
+      'sms-use-blast': () => {
+        document.getElementById('sms-input').value = document.getElementById('blast-input').value;
+        renderSms();
+      },
       'sms-copy-numbers': () => {
-        if (!smsState || !smsState.numbers.length) return toast('No phone numbers to copy', false);
-        copyText(smsState.numbers.join('\n'), `${smsState.numbers.length} number${smsState.numbers.length === 1 ? '' : 's'}`);
+        if (!smsNumbers || !smsNumbers.length) return toast('No phone numbers to copy', false);
+        copyText(smsNumbers.join('\n'), plural(smsNumbers.length, 'number'));
       },
       'sms-copy-message': () => {
-        const message = document.getElementById('blast-input').value.trim();
+        const message = smsMessage();
         if (!message) return toast('Type a message first', false);
         copyText(message, 'message');
       }
