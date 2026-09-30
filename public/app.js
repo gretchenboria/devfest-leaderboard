@@ -25,7 +25,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Setup criteria inputs
   updateRubricCriteria();
 
-  lucide.createIcons();
+  renderSchedule().then(() => lucide.createIcons());
 });
 
 // Switch Top & Bottom Navigation Tabs
@@ -191,8 +191,10 @@ async function loadLeaderboard() {
     console.error('Error fetching leaderboard:', err);
   } finally {
     setTimeout(() => {
-      if (icon) icon.classList.remove('animate-spin');
-      if (mobIcon) mobIcon.classList.remove('animate-spin');
+      const curIcon = document.getElementById('refresh-icon');
+      const curMobIcon = document.getElementById('mobile-refresh-icon');
+      if (curIcon) curIcon.classList.remove('animate-spin');
+      if (curMobIcon) curMobIcon.classList.remove('animate-spin');
     }, 400);
   }
 }
@@ -932,4 +934,41 @@ async function fetchPreRegisteredTeams() {
   } catch(e) {
     return [];
   }
+}
+
+
+async function renderSchedule() {
+  const tbody = document.getElementById('dynamic-schedule-body');
+  if (!tbody) return;
+  
+  const preReg = await fetchPreRegisteredTeams();
+  const devTeams = preReg.filter(t => t.track.includes('Developer'));
+  const builderTeams = preReg.filter(t => t.track.includes('Builder'));
+  
+  // Enforce at least 10 slots per track so it doesn't look empty, but allow more if registered
+  const maxSlots = Math.max(10, devTeams.length, builderTeams.length);
+  
+  let html = '';
+  for (let i = 0; i < maxSlots; i++) {
+    const startMin = 15 + i * 5;
+    const endMin = startMin + 5;
+    const formatTime = (min) => {
+      let hr = 5;
+      let m = min;
+      if (m >= 60) { hr = 6; m = m - 60; }
+      return `${hr}:${m.toString().padStart(2, '0')} PM`;
+    };
+    const timeStr = `${formatTime(startMin)} - ${formatTime(endMin)}`;
+    
+    const devName = devTeams[i] ? devTeams[i].teamName : `Team ${i + 1} Demo`;
+    const builderName = builderTeams[i] ? builderTeams[i].teamName : `Team ${i + 1} Demo`;
+    
+    html += `<tr><td class="p-2.5 whitespace-nowrap">${timeStr}</td><td class="p-2.5 font-bold">${devName}</td><td class="p-2.5"><span class="text-blue-600">Developer Track</span><br><span class="text-[10px] text-gray-500">Breakout 3</span></td><td class="p-2.5 text-gray-700">Olivier, Ivan, Parul, Rakesh, Shubham & Peeya</td></tr>`;
+    html += `<tr><td class="p-2.5 whitespace-nowrap">${timeStr}</td><td class="p-2.5 font-bold">${builderName}</td><td class="p-2.5"><span class="text-green-600">Builder Track</span><br><span class="text-[10px] text-gray-500">Expo Hall</span></td><td class="p-2.5 text-gray-700">Gretchen, Jorge, Anu, Hemanth & Lourdes</td></tr>`;
+  }
+  
+  html += `<tr class="bg-gray-50"><td class="p-2.5 whitespace-nowrap">6:05 PM - 6:15 PM</td><td class="p-2.5 font-bold">Judge Deliberation & Final Scoring</td><td class="p-2.5">Both Tracks<br><span class="text-[10px] text-gray-500">Breakout 3</span></td><td class="p-2.5 text-gray-700">All Judges</td></tr>`;
+  html += `<tr class="bg-gray-50"><td class="p-2.5 whitespace-nowrap">6:30 PM - 9:00 PM</td><td class="p-2.5 font-bold">Awards & After Party</td><td class="p-2.5">Both Tracks<br><span class="text-[10px] text-gray-500">Main Stage</span></td><td class="p-2.5 text-gray-700">All Attendees</td></tr>`;
+  
+  tbody.innerHTML = html;
 }
