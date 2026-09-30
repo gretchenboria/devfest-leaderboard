@@ -606,7 +606,7 @@ app.delete('/api/scores/:id', requireAdmin, async (req, res) => {
   appState.scores = appState.scores.filter(s => s.id !== id);
   if (appState.scores.length < initialLength) {
     appState.lastSyncTime = new Date().toISOString();
-    await saveScoresToGCS();
+    await backupToCloudStorage();
     broadcast('sync', { message: 'A score was deleted.' });
     res.json({ success: true });
   } else {
@@ -626,7 +626,7 @@ app.post('/api/teams', requireAdmin, async (req, res) => {
   if (teamName && !appState.registeredTeams.find(t => t.teamName.toLowerCase() === teamName.trim().toLowerCase())) {
     appState.registeredTeams.push({ teamName: teamName.trim(), track });
     appState.lastSyncTime = new Date().toISOString();
-    await saveScoresToGCS();
+    await backupToCloudStorage();
     res.json({ success: true });
   } else {
     res.status(400).json({ success: false, error: 'Team already exists or invalid' });
@@ -637,7 +637,7 @@ app.delete('/api/teams/:name', requireAdmin, async (req, res) => {
   if (!appState.registeredTeams) appState.registeredTeams = [];
   appState.registeredTeams = appState.registeredTeams.filter(t => t.teamName !== req.params.name);
   appState.lastSyncTime = new Date().toISOString();
-  await saveScoresToGCS();
+  await backupToCloudStorage();
   res.json({ success: true });
 });
 
