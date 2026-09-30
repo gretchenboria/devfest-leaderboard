@@ -5,3 +5,5 @@ npm-debug.log
 .gitignore
 test
 screenshots
+.env
+.env.*

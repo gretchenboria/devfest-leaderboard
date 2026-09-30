@@ -929,7 +929,11 @@ app.get('/api/interactions', (req, res) => {
 
 // --- VOLUNTEER HUB LOGIC ---
  
-const WRIKE_TOKEN = process.env.WRIKE_TOKEN || "eyJ0dCI6InAiLCJhbGciOiJIUzI1NiIsInR2IjoiMiJ9.eyJkIjoie1wiYVwiOjcyMjQ2OTEsXCJpXCI6OTg0MjM3MSxcImNcIjo0NzQwMjkwLFwidVwiOjI1OTQzMDAyLFwiclwiOlwiVVNcIixcInNcIjpbXCJXXCIsXCJGXCIsXCJJXCIsXCJVXCIsXCJLXCIsXCJDXCIsXCJEXCIsXCJNXCIsXCJBXCIsXCJMXCIsXCJQXCJdLFwielwiOltdLFwidFwiOjB9IiwiaWF0IjoxNzg2NTA3ODc2fQ.MfLrayA9vrem_-_2QA50izOZgJBGiRuS1RTv8Iuhygw";
+// Wrike API token comes only from the environment (Secret Manager `wrike-token`).
+// Without it, or when Wrike rejects it, the Hub keeps serving the last good
+// role list (or the built-in fallback) and admin shows "Wrike not connected".
+const WRIKE_TOKEN = (process.env.WRIKE_TOKEN || '').trim();
+const WRIKE_API_BASE = (process.env.WRIKE_API_BASE || 'https://www.wrike.com/api/v4').replace(/\/+$/, '');
 const FOLDER_ID = process.env.WRIKE_FOLDER_ID || "MQAAAAEOCyNH";
 const VOLUNTEERS_FILE = path.join(DATA_DIR, 'volunteers.json');
 
@@ -954,17 +958,29 @@ const FALLBACK_ROLES = [
   { id: "MAAAAAEPa5hu", title: "Event Cleanup", description: "Hourly sweeps. Teardown 9:00–10:00 PM." }
 ];
 const ROLES_TTL_MS = 60 * 1000;
+// After a failure, wait before calling Wrike again: a rejected token will not
+// fix itself, so back off for longer than for a network blip.
+const WRIKE_REJECTED_BACKOFF_MS = 30 * 60 * 1000;
+const WRIKE_ERROR_BACKOFF_MS = 5 * 60 * 1000;
 let rolesCache = { at: 0, roles: null };
+// state: 'missing' (no token) | 'unknown' (not tried yet) | 'ok' | 'rejected' | 'error'
+const wrikeStatus = { state: WRIKE_TOKEN ? 'unknown' : 'missing', detail: '', lastOkAt: 0, lastAttemptAt: 0, retryAfter: 0 };
+if (!WRIKE_TOKEN && process.env.WRIKE_OFFLINE !== '1') {
+  console.warn('[Wrike] WRIKE_TOKEN is not set; using cached/built-in volunteer roles.');
+}
 
 async function fetchWrikeRoles() {
-  const url = `https://www.wrike.com/api/v4/folders/${FOLDER_ID}/tasks?fields=['description']`;
+  const url = `${WRIKE_API_BASE}/folders/${FOLDER_ID}/tasks?fields=['description']`;
   const response = await fetch(url, {
     headers: { 'Authorization': `bearer ${WRIKE_TOKEN}` },
     signal: AbortSignal.timeout(8000)
   });
-  if (!response.ok) throw new Error(`Wrike responded ${response.status}`);
+  if (!response.ok) {
+    const err = new Error(`Wrike responded ${response.status}`);
+    err.status = response.status;
+    throw err;
+  }
   const data = await response.json();
-
   // Filter only tasks starting with [Volunteer]
   return (data.data || [])
     .filter(t => t.title.startsWith('[Volunteer]'))
@@ -978,20 +994,54 @@ async function fetchWrikeRoles() {
 
 async function getRoles() {
   if (rolesCache.roles && Date.now() - rolesCache.at < ROLES_TTL_MS) return rolesCache.roles;
-  if (process.env.WRIKE_OFFLINE !== '1') {
+  const canCall = WRIKE_TOKEN && process.env.WRIKE_OFFLINE !== '1' && Date.now() >= wrikeStatus.retryAfter;
+  if (canCall) {
+    wrikeStatus.lastAttemptAt = Date.now();
     try {
       const roles = await fetchWrikeRoles();
       if (roles.length) {
+        if (wrikeStatus.state !== 'ok') console.log(`[Wrike] Connected; loaded ${roles.length} roles.`);
+        Object.assign(wrikeStatus, { state: 'ok', detail: '', lastOkAt: Date.now(), retryAfter: 0 });
         rolesCache = { at: Date.now(), roles };
         return roles;
       }
+      Object.assign(wrikeStatus, { state: 'error', detail: 'Wrike returned no [Volunteer] tasks', retryAfter: Date.now() + WRIKE_ERROR_BACKOFF_MS });
     } catch (err) {
-      console.warn('[Wrike] Could not load roles, using fallback:', err.message);
+      const rejected = err.status === 401 || err.status === 403;
+      const state = rejected ? 'rejected' : 'error';
+      // Log once per change of state, not on every page load.
+      if (wrikeStatus.state !== state || wrikeStatus.detail !== err.message) {
+        console.warn(`[Wrike] ${rejected ? 'Token rejected' : 'Could not load roles'} (${err.message}); using cached roles.`);
+      }
+      Object.assign(wrikeStatus, { state, detail: err.message, retryAfter: Date.now() + (rejected ? WRIKE_REJECTED_BACKOFF_MS : WRIKE_ERROR_BACKOFF_MS) });
     }
   }
   rolesCache = { at: Date.now(), roles: rolesCache.roles || FALLBACK_ROLES };
   return rolesCache.roles;
 }
+
+function wrikeStatusReport() {
+  const connected = wrikeStatus.state === 'ok';
+  const messages = {
+    ok: 'Wrike connected.',
+    unknown: 'Wrike not checked yet.',
+    missing: 'Wrike not connected: no WRIKE_TOKEN is configured. The Hub is using the saved volunteer roles.',
+    rejected: 'Wrike not connected: Wrike rejected the API token. Generate a new token and update the wrike-token secret. The Hub is using the saved volunteer roles.',
+    error: 'Wrike not connected right now. The Hub is using the saved volunteer roles.'
+  };
+  return {
+    connected,
+    state: wrikeStatus.state,
+    message: messages[wrikeStatus.state] || messages.error,
+    lastOkAt: wrikeStatus.lastOkAt || null,
+    usingFallback: !connected
+  };
+}
+
+app.get('/api/admin/wrike/status', requireAdmin, async (req, res) => {
+  await getRoles(); // cached / backed off; never hammers Wrike
+  res.json(wrikeStatusReport());
+});
 
 app.get('/api/volunteer/tasks', async (req, res) => {
   try {

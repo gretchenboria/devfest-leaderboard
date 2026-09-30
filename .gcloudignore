@@ -1,2 +1,45 @@
-node_modules/
+# Files excluded from `gcloud run deploy --source .` uploads (and so from the
+# built image). Runtime needs only: Dockerfile, package*.json, server.js, lib/,
+# public/ and the data/scores.json seed. Verify with:
+#   gcloud meta list-files-for-upload .
+
+# VCS / tooling
 .git/
+.gitignore
+.gcloudignore
+.claude/
+.DS_Store
+**/.DS_Store
+
+# Secrets and local env (including the example file)
+.env
+.env.*
+
+# Dependencies are installed in the image by `npm ci`
+node_modules/
+
+# Tests, test artifacts and screenshots
+test/
+test_workflow.js
+coverage/
+test-results/
+playwright-report/
+*.log
+screenshots/
+
+# One-off scratch scripts and local data dumps (may contain PII)
+patch_*.js
+patch_*.cjs
+fix_*.js
+fix_*.cjs
+wipe_dummy.js
+replace_theme.py
+restore.json
+clean_restore.json
+*.bak
+backups/
+dump*.json
+*.dump
+data/state.json
+data/volunteers.json
+data/*.tmp
