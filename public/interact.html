@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DevFest Controller</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f8f9fa;
+            text-align: center;
+            padding: 20px;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+        h1 { color: #4285F4; margin-bottom: 30px; }
+        .input-group { margin-bottom: 30px; width: 100%; max-width: 300px; }
+        input[type="text"] {
+            width: 100%; padding: 15px; font-size: 18px; border: 2px solid #EA4335; border-radius: 8px; box-sizing: border-box; text-align: center;
+        }
+        .btn {
+            background-color: #34A853; color: white; border: none; padding: 20px; margin: 10px; font-size: 20px; font-weight: bold; border-radius: 12px; cursor: pointer; width: 100%; max-width: 300px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: transform 0.1s;
+        }
+        .btn:active { transform: scale(0.95); }
+        .btn-sauce { background-color: #EA4335; }
+        .btn-bounce { background-color: #FBBC05; }
+        #status { margin-top: 20px; font-weight: bold; color: #555; height: 24px; }
+    </style>
+</head>
+<body>
+    <h1>🎮 DevFest Remote</h1>
+    <div class="input-group">
+        <input type="text" id="teamName" placeholder="Enter Team Name..." required>
+    </div>
+    
+    <button class="btn btn-sauce" onclick="sendAction('throw_hot_sauce')">🔥 Throw Hot Sauce!</button>
+    <button class="btn btn-bounce" onclick="sendAction('make_it_bounce')">🏀 Make it Bounce!</button>
+    <button class="btn" onclick="sendAction('confetti')">🎉 Confetti Nuke!</button>
+
+    <div id="status"></div>
+
+    <script>
+        async function sendAction(action) {
+            const teamName = document.getElementById('teamName').value.trim() || 'Anonymous Dev';
+            const statusDiv = document.getElementById('status');
+            
+            statusDiv.textContent = 'Sending...';
+            
+            try {
+                const res = await fetch('/api/interact', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ teamName, action })
+                });
+                if (res.ok) {
+                    statusDiv.textContent = 'Sent!';
+                    setTimeout(() => statusDiv.textContent = '', 2000);
+                } else {
+                    statusDiv.textContent = 'Failed to send.';
+                }
+            } catch (err) {
+                console.error(err);
+                statusDiv.textContent = 'Error sending action.';
+            }
+        }
+    </script>
+</body>
+</html>
