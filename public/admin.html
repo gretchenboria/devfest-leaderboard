@@ -23,64 +23,70 @@
         top: 0;
         width: 100%;
       }
-      .flex.gap-4 { /* hide buttons during print */
+      .no-print {
         display: none !important;
       }
     }
+    .modal-open { overflow: hidden; }
   </style>
 
 </head>
 <body class="bg-gray-50 text-gray-900 font-sans min-h-screen p-4 sm:p-8">
 
-  <div class="max-w-2xl mx-auto">
-    
+  <div class="max-w-3xl mx-auto">
+
     <!-- Login Screen -->
     <div id="login-section" class="bg-white rounded-3xl p-8 shadow-xl border border-gray-100 max-w-md mx-auto mt-12 text-center hidden">
       <img src="/assets/hot-sauce-sticker.png" class="w-16 h-16 mx-auto mb-4" alt="Logo">
-      <h2 class="text-2xl font-black mb-2" id="login-title">Loading...</h2>
-      <p class="text-gray-500 text-sm mb-6" id="login-subtitle"></p>
-      
-      <div id="g_id_onload"
-           data-context="signin"
-           data-ux_mode="popup"
-           data-callback="handleGoogleCredentialResponse"
-           data-auto_prompt="false">
-      </div>
-      
-      <div class="mb-4 text-center">
-        <p class="text-sm text-gray-600"><strong>Team Captains & Admins:</strong> Sign in with your approved Google Account to manage the event.</p>
-      </div>
-      <div id="g_id_signin_container" class="mb-6 flex justify-center w-full"></div>
-
-      <div class="flex items-center gap-2 mb-6">
-        <div class="h-px bg-gray-200 flex-1"></div>
-        <span class="text-xs text-gray-400 font-medium uppercase text-center px-2" id="separator-text">Or use Local Backup Password<br/>(configured in .env)</span>
-        <div class="h-px bg-gray-200 flex-1"></div>
-      </div>
-
-      <input type="text" id="admin-user" placeholder="Username (e.g. admin)" class="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500">
-      <input type="password" id="admin-pass" placeholder="Password" class="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500">
-      <button id="auth-btn" onclick="submitAuth()" class="w-full bg-[#1e1e1e] text-white font-bold py-3 rounded-xl hover:bg-black transition shadow-md">Login</button>
+      <h2 class="text-2xl font-black mb-2">Organizer Login</h2>
+      <p class="text-gray-500 text-sm mb-6">Sign in with the Google account an admin added to the Hub.</p>
+      <div id="g_id_signin_container" class="mb-4 flex justify-center w-full"></div>
+      <p id="login-error" class="hidden text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3 mb-4"></p>
+      <p class="text-xs text-gray-500">Team captain or volunteer? Use the <a href="/team" class="text-blue-600 font-bold hover:underline">Team page</a> to see your tasks and roster.</p>
     </div>
 
     <!-- Admin Dashboard -->
     <div id="dashboard-section" class="hidden">
-      <div class="flex items-center justify-between mb-8">
+      <div class="flex items-center justify-between gap-4 mb-6">
         <div>
-          <h1 class="text-3xl font-black text-gray-900">Admin Control Panel</h1>
-          <p class="text-gray-500 text-sm">Manage volunteers, blasts, and instructions.</p>
+          <h1 class="text-2xl sm:text-3xl font-black text-gray-900">Admin Control Panel</h1>
+          <p class="text-gray-500 text-sm">Signed in as <span id="me-email" class="font-medium text-gray-700"></span></p>
         </div>
-        <button onclick="logout()" class="px-4 py-2 bg-gray-200 rounded-lg text-sm font-bold text-gray-700 hover:bg-gray-300">Log out</button>
+        <button onclick="logout()" class="px-4 py-2 bg-gray-200 rounded-lg text-sm font-bold text-gray-700 hover:bg-gray-300 shrink-0">Log out</button>
       </div>
 
+      <!-- Team Task Board -->
+      <div id="tasks-section" class="bg-white rounded-3xl p-4 sm:p-6 shadow-sm border border-gray-100 mb-6">
+        <div class="flex flex-wrap items-start justify-between gap-3 mb-3">
+          <div>
+            <h2 class="text-lg font-bold flex items-center gap-2"><i data-lucide="clipboard-check" class="text-emerald-500"></i> Team Task Board</h2>
+            <p class="text-sm text-gray-500 mt-1"><span id="board-totals">Loading…</span> <span id="live-dot" title="Live updates" class="inline-block w-2 h-2 rounded-full bg-gray-300 align-middle ml-1"></span></p>
+          </div>
+          <div class="flex gap-2">
+            <button data-action="seed-all" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-3 rounded-xl text-sm transition flex items-center gap-1"><i data-lucide="sparkles" class="w-4 h-4"></i> Seed all teams</button>
+            <button data-action="refresh-board" class="bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-2 px-3 rounded-xl text-sm transition" title="Refresh"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
+          </div>
+        </div>
+        <div class="flex gap-2 mb-4 text-sm" role="tablist">
+          <button data-action="filter" data-filter="all" class="board-filter px-3 py-1.5 rounded-lg font-bold">All</button>
+          <button data-action="filter" data-filter="open" class="board-filter px-3 py-1.5 rounded-lg font-bold">Open</button>
+          <button data-action="filter" data-filter="blocked" class="board-filter px-3 py-1.5 rounded-lg font-bold">Blocked</button>
+        </div>
+        <div id="board-roles" class="space-y-4">
+          <p class="text-sm text-gray-400 text-center py-6">Loading tasks…</p>
+        </div>
+      </div>
 
       <!-- Resources & Handouts -->
       <div class="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 mb-6">
         <h2 class="text-lg font-bold flex items-center gap-2 mb-4"><i data-lucide="file-text" class="text-purple-500"></i> Resources & Handouts</h2>
         <p class="text-sm text-gray-500 mb-4">Print or share this handout for attendees to follow along with the Vibe Coding Challenge.</p>
-        <div class="flex gap-4">
+        <div class="flex flex-wrap gap-3">
           <a href="/handout.html" target="_blank" class="inline-flex items-center gap-2 bg-purple-50 border border-purple-200 hover:bg-purple-100 text-purple-700 font-bold py-3 px-5 rounded-xl transition">
             <i data-lucide="external-link" class="w-5 h-5"></i> Open Vibe Lounge Handout
+          </a>
+          <a href="/team" target="_blank" class="inline-flex items-center gap-2 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-emerald-700 font-bold py-3 px-5 rounded-xl transition">
+            <i data-lucide="smartphone" class="w-5 h-5"></i> Captain & Volunteer Team Page
           </a>
         </div>
       </div>
@@ -88,83 +94,76 @@
       <!-- Quick Add Volunteer -->
       <div class="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 mb-6">
         <h2 class="text-lg font-bold flex items-center gap-2 mb-4"><i data-lucide="user-plus" class="text-blue-500"></i> Manually Assign Volunteer</h2>
-        <div class="grid grid-cols-1 sm:grid-cols-5 gap-3">
-          <input type="text" id="manual-task-id" placeholder="Task ID (e.g. 123456789)" class="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-          <input type="text" id="manual-first-name" placeholder="First Name" class="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-          <input type="text" id="manual-last-initial" placeholder="Last Initial" class="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-          <input type="email" id="manual-email" placeholder="Email" class="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-          <input type="tel" id="manual-phone" placeholder="Phone" class="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <div class="grid grid-cols-1 sm:grid-cols-5 gap-3 mb-3">
+          <select id="assign-task" class="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"><option value="">Loading teams…</option></select>
+          <input type="text" id="assign-fname" placeholder="First name" class="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <input type="text" id="assign-lname" placeholder="Last name" class="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <input type="email" id="assign-email" placeholder="Email" class="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <input type="tel" id="assign-phone" placeholder="Phone" class="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
         </div>
-        <button onclick="manualAddVolunteer()" class="mt-3 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-xl text-sm transition">Assign to Task</button>
+        <div class="flex items-center gap-4">
+          <button data-action="assign-volunteer" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-xl text-sm transition">Assign to Team</button>
+          <label class="flex items-center gap-2 text-sm font-bold text-gray-700 cursor-pointer">
+            <input type="checkbox" id="assign-captain" class="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"> Make Team Captain
+          </label>
+        </div>
       </div>
 
       <!-- Roster Card -->
       <div id="roster-section" class="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 mb-6">
-        
-        <p class="text-sm text-gray-500 mb-4 bg-green-50 p-3 rounded-lg border border-green-100"><i data-lucide="info" class="w-4 h-4 inline text-green-400 mr-1"></i><strong>Privacy Note:</strong> Volunteer emails and phone numbers are stored highly encrypted on the server. They are only decrypted here so you can securely contact them.</p>
+        <p class="text-sm text-gray-500 mb-4 bg-green-50 p-3 rounded-lg border border-green-100"><i data-lucide="info" class="w-4 h-4 inline text-green-400 mr-1"></i><strong>Privacy Note:</strong> Volunteer names, emails and phone numbers are stored encrypted on the server. They are only decrypted here so you can securely contact them.</p>
         <div class="flex justify-between items-center mb-4">
           <h2 class="text-lg font-bold flex items-center gap-2"><i data-lucide="users" class="text-green-500"></i> Volunteer Roster</h2>
-          <div class="flex gap-4"><button onclick="window.print()" class="text-sm text-gray-600 hover:text-black hover:underline flex items-center gap-1"><i data-lucide="printer" class="w-4 h-4"></i> Print</button><button onclick="loadVolunteers()" class="text-sm text-blue-600 hover:underline flex items-center gap-1"><i data-lucide="refresh-cw" class="w-4 h-4"></i> Refresh</button></div>
+          <div class="flex gap-4 no-print"><button onclick="window.print()" class="text-sm text-gray-600 hover:text-black hover:underline flex items-center gap-1"><i data-lucide="printer" class="w-4 h-4"></i> Print</button><button data-action="refresh-roster" class="text-sm text-blue-600 hover:underline flex items-center gap-1"><i data-lucide="refresh-cw" class="w-4 h-4"></i> Refresh</button></div>
         </div>
         <div class="overflow-x-auto">
           <table class="w-full text-left border-collapse">
             <thead>
               <tr class="bg-gray-50 border-b border-gray-100 text-xs font-bold text-gray-500 uppercase tracking-wider">
                 <th class="p-3 rounded-tl-lg text-left">Volunteer</th>
-                <th class="p-3 text-left">Contact Email</th>
-                <th class="p-3 text-left">Phone</th>
+                <th class="p-3 text-left">Contact</th>
                 <th class="p-3 rounded-tr-lg text-left">Roles & Actions</th>
               </tr>
             </thead>
             <tbody id="roster-tbody" class="text-sm divide-y divide-gray-100">
-              <tr><td colspan="5" class="p-4 text-center text-gray-400">Loading roster...</td></tr>
+              <tr><td colspan="3" class="p-4 text-center text-gray-400">Loading roster...</td></tr>
             </tbody>
           </table>
         </div>
       </div>
 
-      
-      
-
-      
       <!-- Manage Admins Card -->
       <div class="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 mb-6">
         <h2 class="text-lg font-bold flex items-center gap-2 mb-4"><i data-lucide="shield" class="text-purple-500"></i> Manage Hub Admins</h2>
-        
-        <p class="text-sm text-gray-500 mb-4 bg-purple-50 p-3 rounded-lg border border-purple-100"><i data-lucide="info" class="w-4 h-4 inline text-purple-400 mr-1"></i><strong>How it works:</strong> Type the email address of any Co-Organizer below and click "Add Admin". Once their email is added to this list, they can visit this page and click the <strong>"Sign in with Google"</strong> button to get instant access to this dashboard.</p>
+        <p class="text-sm text-gray-500 mb-4 bg-purple-50 p-3 rounded-lg border border-purple-100"><i data-lucide="info" class="w-4 h-4 inline text-purple-400 mr-1"></i><strong>How it works:</strong> Add a co-organizer's Google email below. They can then open this page and use <strong>Sign in with Google</strong>. Removing someone revokes their access immediately. Team captains do not need to be admins; they use the Team page.</p>
         <div class="flex gap-2 mb-4">
-          <input type="email" id="new-admin-email" placeholder="captain@example.com" class="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none">
-          <button onclick="addAdmin()" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-xl text-sm transition">Add Admin</button>
+          <input type="email" id="new-admin-email" placeholder="organizer@example.com" class="flex-1 min-w-0 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none">
+          <button data-action="add-admin" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-xl text-sm transition shrink-0">Add Admin</button>
         </div>
-        <div class="overflow-x-auto">
-          <table class="w-full text-left border-collapse">
-            <tbody id="admins-tbody" class="text-sm divide-y divide-gray-100">
-              <tr><td class="p-4 text-center text-gray-400">Loading admins...</td></tr>
-            </tbody>
-          </table>
-        </div>
+        <ul id="admins-list" class="text-sm divide-y divide-gray-100">
+          <li class="p-3 text-center text-gray-400">Loading admins...</li>
+        </ul>
       </div>
 
-      
-        
-        <!-- Manage Pre-Registered Teams -->
-        <h2 class="text-lg font-bold flex items-center gap-2 mb-4 mt-8"><i data-lucide="users" class="text-green-500"></i> Pre-Register Teams</h2>
+      <!-- Manage Pre-Registered Teams -->
+      <div class="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 mb-6">
+        <h2 class="text-lg font-bold flex items-center gap-2 mb-4"><i data-lucide="users" class="text-green-500"></i> Pre-Register Hackathon Teams</h2>
         <p class="text-sm text-gray-500 mb-4 bg-green-50 p-3 rounded-lg border border-green-100">Add team names here so judges can easily select them from a dropdown without typing.</p>
-        <div class="flex gap-2 mb-4">
-          <input type="text" id="new-team-name" placeholder="Team Name" class="border p-2 rounded flex-1 text-sm">
-          <select id="new-team-track" class="border p-2 rounded text-sm bg-white">
+        <div class="flex flex-wrap gap-2 mb-4">
+          <input type="text" id="new-team-name" placeholder="Team Name" class="border border-gray-200 bg-gray-50 p-2 rounded-lg flex-1 min-w-0 text-sm">
+          <select id="new-team-track" class="border border-gray-200 p-2 rounded-lg text-sm bg-white">
             <option value="Developer Track">Developer Track</option>
             <option value="Builder Track">Builder Track</option>
           </select>
-          <button onclick="addTeam()" class="bg-blue-600 text-white px-4 py-2 rounded text-sm font-bold">Add Team</button>
+          <button data-action="add-team" class="bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-bold">Add Team</button>
         </div>
-        <div class="bg-white rounded-xl shadow-sm border border-gray-100 mb-6 p-4">
-          <ul id="teams-list" class="divide-y divide-gray-100"></ul>
-        </div>
+        <ul id="teams-list" class="divide-y divide-gray-100 text-sm"></ul>
+      </div>
 
-        <!-- Manage Leaderboard Data -->
-        <h2 class="text-lg font-bold flex items-center gap-2 mb-4 mt-8"><i data-lucide="database" class="text-indigo-500"></i> Manage Leaderboard Data</h2>
-        <div class="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 mb-6 overflow-x-auto">
+      <!-- Manage Leaderboard Data -->
+      <div class="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 mb-6">
+        <h2 class="text-lg font-bold flex items-center gap-2 mb-4"><i data-lucide="database" class="text-indigo-500"></i> Manage Leaderboard Data</h2>
+        <div class="overflow-x-auto">
           <table class="w-full text-left text-sm whitespace-nowrap">
             <thead class="bg-gray-50 text-gray-500">
               <tr>
@@ -175,36 +174,32 @@
                 <th class="p-3 font-semibold rounded-tr-xl">Action</th>
               </tr>
             </thead>
-            <tbody id="scores-tbody" class="divide-y divide-gray-100">
-              <!-- JS Populated -->
-            </tbody>
+            <tbody id="scores-tbody" class="divide-y divide-gray-100"></tbody>
           </table>
-          <div class="mt-4 flex gap-4">
-            <button onclick="loadScores()" class="text-sm text-blue-600 hover:underline flex items-center gap-1"><i data-lucide="refresh-cw" class="w-4 h-4"></i> Refresh Scores</button>
-            <button onclick="wipeDummies()" class="text-sm text-red-600 hover:underline flex items-center gap-1"><i data-lucide="trash-2" class="w-4 h-4"></i> Wipe Demo Data</button>
-          </div>
         </div>
+        <div class="mt-4 flex gap-4">
+          <button data-action="refresh-scores" class="text-sm text-blue-600 hover:underline flex items-center gap-1"><i data-lucide="refresh-cw" class="w-4 h-4"></i> Refresh Scores</button>
+        </div>
+      </div>
 
-        <!-- Instructions Card -->
+      <!-- Instructions Card -->
       <div class="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 mb-6">
         <h2 class="text-lg font-bold flex items-center gap-2 mb-4"><i data-lucide="edit" class="text-blue-500"></i> Set Custom Instructions</h2>
-        <p class="text-xs text-gray-500 mb-3">Target specific roles, specific captains, or all volunteers.</p>
-        
+        <p class="text-xs text-gray-500 mb-3">Target specific roles, specific captains, or all volunteers. These show on the volunteer sign-up page and the Team page.</p>
+
         <select id="inst-target" class="w-full bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm mb-3 outline-none">
           <option value="global">🌐 Global (All Volunteers)</option>
           <optgroup id="opt-roles" label="Roles / Tasks"></optgroup>
           <optgroup id="opt-captains" label="Team Captains (Volunteers)"></optgroup>
         </select>
-        
+
         <textarea id="instructions-input" rows="3" class="w-full bg-gray-50 border border-gray-200 rounded-xl p-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-3" placeholder="Enter instructions here..."></textarea>
-        <button onclick="saveInstructions()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-xl text-sm transition">Save Target Instruction</button>
-        
+        <button data-action="save-instructions" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-xl text-sm transition">Save Target Instruction</button>
+
         <div class="mt-6 border-t border-gray-100 pt-4">
           <h3 class="text-sm font-bold text-gray-800 mb-3">Active Custom Instructions</h3>
           <div id="current-custom-instructions" class="space-y-2"></div>
         </div>
-        
-        
       </div>
 
       <!-- Blast Card -->
@@ -212,513 +207,799 @@
         <h2 class="text-lg font-bold flex items-center gap-2 mb-4"><i data-lucide="megaphone" class="text-red-500"></i> Blast Announcements</h2>
         <p class="text-xs text-gray-500 mb-3">Send an SMS/Email alert to all signed-up volunteers.</p>
         <textarea id="blast-input" rows="2" class="w-full bg-gray-50 border border-gray-200 rounded-xl p-4 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 mb-3" placeholder="ATTENTION ALL VOLUNTEERS: ..."></textarea>
-        <button onclick="sendBlast()" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-6 rounded-xl text-sm transition shadow-sm shadow-red-200">Send Blast 🚀</button>
+        <button data-action="send-blast" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-6 rounded-xl text-sm transition shadow-sm shadow-red-200">Send Blast 🚀</button>
       </div>
-      
+
       <a href="/volunteer" target="_blank" class="text-blue-600 text-sm font-bold hover:underline">View Volunteer Hub &rarr;</a>
     </div>
 
   </div>
 
+  <!-- Task create/edit modal -->
+  <div id="task-modal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-end sm:items-center justify-center">
+    <div class="bg-white w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl max-h-[92vh] overflow-y-auto">
+      <form id="task-form" class="p-5 space-y-3">
+        <div class="flex items-center justify-between">
+          <h3 id="task-modal-title" class="text-lg font-black">New task</h3>
+          <button type="button" data-action="close-modal" class="text-gray-400 hover:text-gray-700 p-1" aria-label="Close"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+        <input type="hidden" id="tf-id">
+        <label class="block text-xs font-bold text-gray-600">Title
+          <input id="tf-title" required maxlength="140" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-normal focus:ring-2 focus:ring-blue-500 focus:outline-none">
+        </label>
+        <label class="block text-xs font-bold text-gray-600">Details
+          <textarea id="tf-details" rows="3" maxlength="2000" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-normal focus:ring-2 focus:ring-blue-500 focus:outline-none"></textarea>
+        </label>
+        <div class="grid grid-cols-2 gap-3">
+          <label class="block text-xs font-bold text-gray-600">Team
+            <select id="tf-role" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-2 py-2 text-sm font-normal"></select>
+          </label>
+          <label class="block text-xs font-bold text-gray-600">Assign to
+            <select id="tf-assignee" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-2 py-2 text-sm font-normal"></select>
+          </label>
+          <label class="block text-xs font-bold text-gray-600">Start
+            <input id="tf-start" type="time" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-2 py-2 text-sm font-normal">
+          </label>
+          <label class="block text-xs font-bold text-gray-600">End
+            <input id="tf-end" type="time" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-2 py-2 text-sm font-normal">
+          </label>
+          <label class="block text-xs font-bold text-gray-600">Priority
+            <select id="tf-priority" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-2 py-2 text-sm font-normal">
+              <option value="high">High</option><option value="normal">Normal</option><option value="low">Low</option>
+            </select>
+          </label>
+          <label class="block text-xs font-bold text-gray-600">Status
+            <select id="tf-status" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-2 py-2 text-sm font-normal">
+              <option value="todo">To do</option><option value="in_progress">In progress</option><option value="done">Done</option><option value="blocked">Blocked</option>
+            </select>
+          </label>
+        </div>
+        <label class="block text-xs font-bold text-gray-600">Location
+          <input id="tf-location" maxlength="120" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-normal focus:ring-2 focus:ring-blue-500 focus:outline-none">
+        </label>
+        <div id="tf-notes-wrap" class="hidden">
+          <div class="text-xs font-bold text-gray-600 mb-1">Notes</div>
+          <ul id="tf-notes" class="space-y-2 mb-2"></ul>
+        </div>
+        <label class="block text-xs font-bold text-gray-600">Add a note
+          <textarea id="tf-note" rows="2" maxlength="1000" placeholder="Visible to the team's captains" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-normal focus:ring-2 focus:ring-blue-500 focus:outline-none"></textarea>
+        </label>
+        <p id="tf-error" class="hidden text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-2"></p>
+        <div class="flex items-center justify-between gap-2 pt-2">
+          <button type="button" id="tf-delete" data-action="delete-task" class="hidden text-red-600 hover:text-red-800 text-sm font-bold flex items-center gap-1"><i data-lucide="trash-2" class="w-4 h-4"></i> Delete</button>
+          <div class="flex gap-2 ml-auto">
+            <button type="button" data-action="close-modal" class="px-4 py-2 rounded-xl bg-gray-100 text-gray-700 font-bold text-sm">Cancel</button>
+            <button type="submit" id="tf-save" class="px-5 py-2 rounded-xl bg-[#1e1e1e] text-white font-bold text-sm">Save</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Templates / quick add modal -->
+  <div id="tpl-modal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-end sm:items-center justify-center">
+    <div class="bg-white w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl max-h-[92vh] overflow-y-auto p-5">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-lg font-black">Add tasks: <span id="tpl-role-title"></span></h3>
+        <button type="button" data-action="close-modal" class="text-gray-400 hover:text-gray-700 p-1" aria-label="Close"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+      <p class="text-xs text-gray-500 mb-2">Recommended tasks from the venue plan. Already added or deleted ones are skipped.</p>
+      <ul id="tpl-list" class="space-y-2 mb-3"></ul>
+      <button data-action="add-templates" class="w-full mb-5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded-xl text-sm">Add selected</button>
+      <label class="block text-xs font-bold text-gray-600">Quick add (one task per line)
+        <textarea id="tpl-lines" rows="4" placeholder="Restock lanyards at 12:00&#10;Radio check with Security" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-normal focus:ring-2 focus:ring-blue-500 focus:outline-none"></textarea>
+      </label>
+      <button data-action="add-lines" class="w-full mt-2 bg-[#1e1e1e] text-white font-bold py-2 rounded-xl text-sm">Add lines as tasks</button>
+    </div>
+  </div>
+
+  <!-- Person edit modal -->
+  <div id="person-modal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-end sm:items-center justify-center">
+    <div class="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl max-h-[92vh] overflow-y-auto">
+      <form id="person-form" class="p-5 space-y-3">
+        <div class="flex items-center justify-between">
+          <h3 class="text-lg font-black">Edit volunteer</h3>
+          <button type="button" data-action="close-modal" class="text-gray-400 hover:text-gray-700 p-1" aria-label="Close"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+        <input type="hidden" id="pf-key">
+        <div class="grid grid-cols-2 gap-3">
+          <label class="block text-xs font-bold text-gray-600">First name
+            <input id="pf-first" required maxlength="40" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-normal">
+          </label>
+          <label class="block text-xs font-bold text-gray-600">Last name
+            <input id="pf-last" maxlength="60" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-normal">
+          </label>
+        </div>
+        <label class="block text-xs font-bold text-gray-600">Contact email
+          <input id="pf-email" type="email" required class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-normal">
+        </label>
+        <label class="block text-xs font-bold text-gray-600">Phone
+          <input id="pf-phone" type="tel" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-normal">
+        </label>
+        <label class="block text-xs font-bold text-gray-600">Google sign-in email
+          <input id="pf-signin" type="email" placeholder="Same as contact email" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-normal">
+          <span class="block font-normal text-gray-500 mt-1">Use this if their contact email is not a Google account. Leave blank to use the contact email.</span>
+        </label>
+        <p id="pf-error" class="hidden text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-2"></p>
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" data-action="close-modal" class="px-4 py-2 rounded-xl bg-gray-100 text-gray-700 font-bold text-sm">Cancel</button>
+          <button type="submit" class="px-5 py-2 rounded-xl bg-[#1e1e1e] text-white font-bold text-sm">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] hidden px-4 py-3 rounded-xl shadow-lg text-sm font-bold text-white max-w-[90vw]"></div>
+
   <script>
-    lucide.createIcons();
+    const SESSION_KEY = 'devfest_session';
+    const STATUS = {
+      todo: { label: 'To do', cls: 'bg-gray-100 text-gray-700 border-gray-200' },
+      in_progress: { label: 'In progress', cls: 'bg-amber-100 text-amber-800 border-amber-200' },
+      done: { label: 'Done', cls: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
+      blocked: { label: 'Blocked', cls: 'bg-red-100 text-red-800 border-red-300' }
+    };
 
-    let isSetupMode = false;
+    let board = null;          // last /api/admin/tasks response
+    let boardFilter = 'all';
+    let volunteers = [];       // last /api/admin/volunteers response
+    let roles = [];            // roles from /api/volunteer/tasks
+    let tplRoleId = null;
 
-    
-    
-    async function loadAdmins() {
-      try {
-        const res = await fetch('/api/admin/admins', { headers: { 'Authorization': 'Bearer ' + sessionStorage.getItem('admin_token') } });
-        const data = await res.json();
-        if (data.success) {
-          document.getElementById('admins-tbody').innerHTML = data.allowedAdmins.map(email => `
-            <tr class="hover:bg-gray-50 transition-colors">
-              <td class="p-3 font-medium text-gray-900">${email}</td>
-            </tr>
-          `).join('');
-        }
-      } catch(e) {
-        console.error("Failed to load admins");
-      }
+    // ---------- helpers ----------
+    function esc(v) {
+      return String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     }
-
-    async function addAdmin() {
-      const email = document.getElementById('new-admin-email').value;
-      if (!email) return;
-      try {
-        const res = await fetch('/api/admin/add_admin', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionStorage.getItem('admin_token') },
-          body: JSON.stringify({ newAdminEmail: email })
-        });
-        const data = await res.json();
-        if (data.success) {
-          document.getElementById('new-admin-email').value = '';
-          loadAdmins();
-        loadScores();
-        loadTeams();
-        } else {
-          alert('Failed to add admin');
-        }
-      } catch (e) {
-        alert('Network error');
-      }
+    function fmtTime(t) {
+      if (!t) return '';
+      const [h, m] = t.split(':').map(Number);
+      return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
     }
-
-    
-    
-    async function toggleCaptain(taskId, timestamp) {
-      try {
-        const res = await fetch('/api/admin/volunteers/' + taskId + '/captain', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionStorage.getItem('admin_token') },
-          body: JSON.stringify({ timestamp })
-        });
-        if (res.ok) {
-          loadVolunteers();
-        } else {
-          alert('Failed to update captain status');
-        }
-      } catch(e) {
-        alert('Network error');
-      }
+    function timeWindow(t) {
+      if (t.startTime && t.endTime) return `${fmtTime(t.startTime)}–${fmtTime(t.endTime)}`;
+      return fmtTime(t.startTime || t.endTime);
+    }
+    function icons() { if (window.lucide) lucide.createIcons(); }
+    let toastTimer;
+    function toast(msg, ok = true) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.className = `fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] px-4 py-3 rounded-xl shadow-lg text-sm font-bold text-white max-w-[90vw] ${ok ? 'bg-[#1e1e1e]' : 'bg-red-600'}`;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => el.classList.add('hidden'), 3000);
+    }
+    async function api(path, { method = 'GET', body } = {}) {
+      const res = await fetch(path, {
+        method,
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionStorage.getItem(SESSION_KEY) },
+        body: body !== undefined ? JSON.stringify(body) : undefined
+      });
+      let data = null;
+      try { data = await res.json(); } catch (e) {}
+      if (res.status === 401) { logout(); throw new Error('Your session expired. Please sign in again.'); }
+      if (!res.ok) throw new Error((data && data.error) || `Request failed (${res.status})`);
+      return data;
+    }
+    function roleTitle(id) {
+      return (roles.find(r => r.id === id) || (board && board.roles.find(r => r.id === id)) || {}).title || id;
+    }
+    function showModal(id) { document.getElementById(id).classList.remove('hidden'); document.body.classList.add('modal-open'); }
+    function closeModals() {
+      document.querySelectorAll('#task-modal, #tpl-modal, #person-modal').forEach(m => m.classList.add('hidden'));
+      document.body.classList.remove('modal-open');
     }
 
-    async function deleteVolunteer(taskId, timestamp) {
-      if (!confirm('Are you sure you want to remove this volunteer?')) return;
-      try {
-        const res = await fetch('/api/admin/volunteers/' + taskId, {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionStorage.getItem('admin_token') },
-          body: JSON.stringify({ timestamp })
-        });
-        if (res.ok) {
-          loadVolunteers();
-        } else {
-          alert('Failed to delete');
-        }
-      } catch (e) {
-        alert('Network error');
-      }
-    }
-
-    
-    async function deleteVolunteerGroup(tasksJson) {
-      if (!confirm('Are you sure you want to remove this volunteer from ALL their tasks?')) return;
-      const tasks = JSON.parse(tasksJson);
-      try {
-        for (let t of tasks) {
-          await fetch('/api/admin/volunteers/' + t.id, {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionStorage.getItem('admin_token') },
-            body: JSON.stringify({ timestamp: t.ts })
-          });
-        }
-        loadVolunteers();
-      } catch(e) {
-        alert('Network error');
-      }
-    }
-    
-    async function toggleCaptainGroup(taskId, timestamp) {
-      try {
-        const res = await fetch('/api/admin/volunteers/' + taskId + '/captain', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionStorage.getItem('admin_token') },
-          body: JSON.stringify({ timestamp })
-        });
-        if (res.ok) {
-          loadVolunteers();
-        } else {
-          alert('Failed to update captain status');
-        }
-      } catch(e) {
-        alert('Network error');
-      }
-    }
-  
-    
-    async function assignVolunteer() {
-      const firstName = document.getElementById('assign-fname').value;
-      const lastInitial = document.getElementById('assign-lname').value;
-      const email = document.getElementById('assign-email').value;
-      const phone = document.getElementById('assign-phone').value;
-      const taskId = document.getElementById('assign-task').value;
-      const isCaptain = document.getElementById('assign-captain').checked;
-      
-      if(!firstName || !email || !taskId) return alert('First Name, Email, and Task are required.');
-      
-      try {
-        const res = await fetch('/api/admin/assign', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionStorage.getItem('admin_token') },
-          body: JSON.stringify({ taskId, firstName, lastInitial, email, phone, isCaptain })
-        });
-        const data = await res.json();
-        if(data.success) {
-          alert('Volunteer assigned successfully!');
-          document.getElementById('assign-fname').value = '';
-          document.getElementById('assign-lname').value = '';
-          document.getElementById('assign-email').value = '';
-          document.getElementById('assign-phone').value = '';
-          document.getElementById('assign-captain').checked = false;
-          loadVolunteers();
-          loadInstructionTargets(); // refresh captain list
-        } else {
-          alert('Failed to assign volunteer: ' + data.error);
-        }
-      } catch(e) {
-        alert('Network error');
-      }
-    }
-
-    async function loadVolunteers() {
-      const tbody = document.getElementById('roster-tbody');
-      try {
-        const res = await fetch('/api/admin/volunteers', { headers: { 'Authorization': 'Bearer ' + sessionStorage.getItem('admin_token') } });
-        if (res.status === 401) { logout(); return; }
-        const data = await res.json();
-        if (data.success) {
-          if (data.volunteers.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-400">No volunteers have signed up yet.</td></tr>';
-            return;
-          }
-          
-          const tRes = await fetch('/api/volunteer/tasks');
-          const tasks = await tRes.json();
-          
-          let grouped = {};
-          data.volunteers.forEach(v => {
-            if (!grouped[v.email]) grouped[v.email] = { name: v.displayName, email: v.email, phone: v.phone, roles: [] };
-            grouped[v.email].roles.push(v);
-          });
-          
-          tbody.innerHTML = Object.values(grouped).map(g => {
-            const roleStrs = g.roles.map(r => {
-              const tName = tasks.find(t => t.id === r.taskId)?.title || r.taskId;
-              return `<div class="mb-1">
-                <span class="font-bold text-gray-800">${tName}</span>
-                ${r.isCaptain ? '<span title="Team Captain" class="text-yellow-500 ml-1"><i data-lucide="star" class="w-3 h-3 inline fill-current"></i></span>' : ''}
-                <div class="inline-block ml-2">
-                  <button onclick="toggleCaptain('${r.taskId}', ${r.timestamp})" class="${r.isCaptain ? 'text-gray-500 hover:text-gray-700' : 'text-yellow-600 hover:text-yellow-800'} text-[10px] font-bold px-1 rounded border mr-1">${r.isCaptain ? 'Demote' : 'Make Captain'}</button>
-                  <button onclick="deleteVolunteer('${r.taskId}', ${r.timestamp})" class="text-red-500 hover:text-red-700 text-[10px] font-bold px-1 rounded border border-red-200">Remove</button>
-                </div>
-              </div>`;
-            }).join('');
-            
-            return `
-            <tr class="hover:bg-gray-50 transition-colors border-b border-gray-100">
-              <td class="p-3">
-                <div class="font-bold text-gray-900">${g.name}</div>
-              </td>
-              <td class="p-3"><a href="mailto:${g.email}" class="text-blue-600 hover:underline text-sm">${g.email}</a></td>
-              <td class="p-3 text-gray-700 text-sm">${g.phone}</td>
-              <td class="p-3 text-sm">${roleStrs}</td>
-            </tr>`;
-          }).join('');
-          lucide.createIcons();
-        }
-      } catch(e) {
-        console.error("loadVolunteers error:", e);
-      }
-    }
-  
-    
+    // ---------- auth ----------
     async function initGoogleAuth() {
       try {
-        const res = await fetch('/api/auth/config');
-        const data = await res.json();
-        
-        if (data.clientId && data.clientId !== 'your_google_oauth_client_id') {
-          document.getElementById('g_id_onload').setAttribute('data-client_id', data.clientId);
-          
-          if (window.google) {
-            google.accounts.id.initialize({
-              client_id: data.clientId,
-              callback: handleGoogleCredentialResponse
-            });
-            google.accounts.id.renderButton(
-              document.getElementById("g_id_signin_container"),
-              { theme: "outline", size: "large", width: "100%" }
-            );
-          }
-        } else {
-          document.getElementById('g_id_signin_container').innerHTML = '<p class="text-xs text-red-500 mb-4 font-bold border border-red-200 bg-red-50 rounded p-2">Google Sign-in is not configured. Missing GOOGLE_CLIENT_ID.</p>';
+        const data = await (await fetch('/api/auth/config')).json();
+        const box = document.getElementById('g_id_signin_container');
+        if (!data.clientId || data.clientId === 'your_google_oauth_client_id') {
+          box.innerHTML = '<p class="text-xs text-red-500 font-bold border border-red-200 bg-red-50 rounded p-2">Google Sign-in is not configured. Missing GOOGLE_CLIENT_ID.</p>';
+          return;
         }
+        const render = () => {
+          google.accounts.id.initialize({ client_id: data.clientId, callback: handleGoogleCredentialResponse });
+          google.accounts.id.renderButton(box, { theme: 'outline', size: 'large', width: 280 });
+        };
+        if (window.google && google.accounts) render();
+        else window.addEventListener('load', () => window.google && render());
       } catch (e) {
-        console.error("Failed to load Google Auth Config", e);
+        console.error('Failed to load Google Auth Config', e);
       }
     }
 
     async function handleGoogleCredentialResponse(response) {
-      if (response.credential) {
-        try {
-          const res = await fetch('/api/auth/google', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ credential: response.credential })
-          });
-          const data = await res.json();
-          if (res.ok && data.success) {
-            sessionStorage.setItem('admin_token', data.token);
-            location.reload();
-          } else {
-            alert("Google Sign-In failed: " + (data.error || "Unknown error"));
-          }
-        } catch (e) {
-          alert("Network error during Google Sign-In");
-        }
-      }
-    }
-
-    
-    async function manualAddVolunteer() {
-      const payload = {
-        taskId: document.getElementById('manual-task-id').value,
-        firstName: document.getElementById('manual-first-name').value,
-        lastInitial: document.getElementById('manual-last-initial').value,
-        email: document.getElementById('manual-email').value,
-        phoneNumber: document.getElementById('manual-phone').value
-      };
-      if (!payload.taskId || !payload.firstName || !payload.email || !payload.phoneNumber) {
-        alert("Please fill all required fields.");
-        return;
-      }
+      const err = document.getElementById('login-error');
+      err.classList.add('hidden');
       try {
-        const res = await fetch('/api/volunteer/claim', {
+        const res = await fetch('/api/auth/google', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
+          body: JSON.stringify({ credential: response.credential })
         });
-        if (res.ok) {
-          document.getElementById('manual-task-id').value = '';
-          document.getElementById('manual-first-name').value = '';
-          document.getElementById('manual-last-initial').value = '';
-          document.getElementById('manual-email').value = '';
-          document.getElementById('manual-phone').value = '';
-          loadVolunteers();
-        } else {
-          alert('Failed to add volunteer');
+        const data = await res.json();
+        if (!res.ok || !data.token) throw new Error(data.error || 'Sign-in failed');
+        sessionStorage.setItem(SESSION_KEY, data.token);
+        if (data.role !== 'admin') {
+          err.innerHTML = `Signed in as ${esc(data.email)}, which is not a Hub admin. <a class="underline font-bold" href="/team">Go to your Team page</a>.`;
+          err.classList.remove('hidden');
+          return;
         }
+        location.reload();
       } catch (e) {
-        alert('Network error');
-      }
-    }
-
-    async function checkStatus() {
-      if (sessionStorage.getItem('admin_token')) {
-        document.getElementById('dashboard-section').classList.remove('hidden');
-        loadVolunteers();
-        loadInstructionTargets();
-        loadAdmins();
-        return;
-      }
-      const res = await fetch('/api/auth/status');
-      const data = await res.json();
-      
-      const section = document.getElementById('login-section');
-      section.classList.remove('hidden');
-      
-      if (!data.isSetup) {
-        isSetupMode = true;
-        document.getElementById('login-title').innerText = "Create Admin Account";
-        document.getElementById('login-subtitle').innerText = "First-time setup. Set your admin credentials.";
-        document.getElementById('auth-btn').innerText = "Create Account";
-        document.getElementById('separator-text').innerText = "Set Local Credentials";
-      } else {
-        isSetupMode = false;
-        document.getElementById('login-title').innerText = "Organizer Login";
-        document.getElementById('login-subtitle').innerText = "Welcome back!";
-        document.getElementById('auth-btn').innerText = "Login";
-        document.getElementById('separator-text').innerText = "Or use Admin Pass";
-      }
-    }
-    checkStatus();
-    setTimeout(initGoogleAuth, 500);
-
-    async function submitAuth() {
-      const u = document.getElementById('admin-user').value;
-      const p = document.getElementById('admin-pass').value;
-      
-      if (!u || !p) return alert("Please fill in both fields");
-
-      if (isSetupMode) {
-        const res = await fetch('/api/auth/setup', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username: u, password: p })
-        });
-        if (res.ok) {
-          alert("Admin account created! You are now logged in.");
-          sessionStorage.setItem('admin_token', data.token);
-          location.reload();
-        } else {
-          alert('Failed to create account.');
-        }
-      } else {
-        const res = await fetch('/api/auth', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: 'admin', username: u, password: p })
-        });
-        if (res.ok) {
-          sessionStorage.setItem('admin_token', data.token);
-          location.reload();
-        } else {
-          alert('Invalid credentials!');
-        }
+        err.textContent = e.message;
+        err.classList.remove('hidden');
       }
     }
 
     function logout() {
-      sessionStorage.removeItem('admin_token');
+      sessionStorage.removeItem(SESSION_KEY);
       location.reload();
     }
 
-    
-    async function deleteInstruction(target) {
-      if(!confirm('Delete this instruction?')) return;
+    async function checkStatus() {
+      if (!sessionStorage.getItem(SESSION_KEY)) {
+        document.getElementById('login-section').classList.remove('hidden');
+        initGoogleAuth();
+        return;
+      }
       try {
-        const res = await fetch('/api/instructions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionStorage.getItem('admin_token') },
-          body: JSON.stringify({ target, text: '' })
-        });
-        if (res.ok) {
-          loadInstructionTargets();
-        }
-      } catch(e) {}
+        const me = await api('/api/admin/admins');
+        document.getElementById('me-email').textContent = me.me;
+        renderAdmins(me);
+      } catch (e) {
+        sessionStorage.removeItem(SESSION_KEY);
+        document.getElementById('login-section').classList.remove('hidden');
+        const err = document.getElementById('login-error');
+        err.textContent = e.message;
+        err.classList.remove('hidden');
+        initGoogleAuth();
+        return;
+      }
+      document.getElementById('dashboard-section').classList.remove('hidden');
+      icons();
+      await loadRoles();
+      loadBoard();
+      loadVolunteers();
+      loadTeams();
+      loadScores();
+      connectLive();
+      setInterval(loadBoard, 30000); // fallback if the live stream drops
     }
 
-    
-
-    
-    async function loadInstructionTargets() {
+    async function loadRoles() {
       try {
-        const tRes = await fetch('/api/volunteer/tasks');
-        const tasks = await tRes.json();
-        
-        const assignSelect = document.getElementById('assign-task');
-        if(assignSelect) assignSelect.innerHTML = tasks.map(t => `<option value="${t.id}">${t.title}</option>`).join('');
-        
-        const roleOpt = document.getElementById('opt-roles');
-        if (roleOpt) roleOpt.innerHTML = tasks.map(t => `<option value="role_${t.id}">📋 ${t.title}</option>`).join('');
-        
-        const vRes = await fetch('/api/admin/volunteers', { headers: { 'Authorization': 'Bearer ' + sessionStorage.getItem('admin_token') } });
-        const vData = await vRes.json();
-        if (vData.success) {
-          const capOpt = document.getElementById('opt-captains');
-          const captains = vData.volunteers.filter(v => v.isCaptain);
-          const uniqueCapEmails = [...new Set(captains.map(c => c.email))];
-          if(capOpt) {
-            capOpt.innerHTML = uniqueCapEmails.map(e => {
-              const cObj = captains.find(c => c.email === e);
-              const tName = tasks.find(t => t.id === cObj.taskId)?.title || 'Task';
-              return `<option value="cap_${e}">⭐ ${cObj.displayName} (${tName})</option>`;
-            }).join('');
-          }
-        }
-        
-        const iRes = await fetch('/api/instructions/all', { headers: { 'Authorization': 'Bearer ' + sessionStorage.getItem('admin_token') } });
-        const iData = await iRes.json();
-        
-        let html = '';
-        if (iData.global) {
-           html += `<div class="bg-gray-50 border border-gray-200 rounded-lg p-3 flex justify-between items-start mb-2">
-                     <div><span class="text-[10px] font-black uppercase tracking-wider bg-gray-200 text-gray-800 px-2 py-1 rounded mr-2">Global</span> <span class="text-sm text-gray-700 whitespace-pre-wrap">${iData.global}</span></div>
-                     <button onclick="deleteInstruction('global')" class="text-red-500 hover:text-red-700 ml-4"><i data-lucide="trash" class="w-4 h-4"></i></button>
-                   </div>`;
-        }
-        if (iData.roles) {
-          for (const [rId, text] of Object.entries(iData.roles)) {
-            const tName = tasks.find(t => t.id === rId)?.title || rId;
-            html += `<div class="bg-blue-50 border border-blue-200 rounded-lg p-3 flex justify-between items-start mb-2">
-                       <div><span class="text-[10px] font-black uppercase tracking-wider bg-blue-200 text-blue-900 px-2 py-1 rounded mr-2">Role: ${tName}</span> <span class="text-sm text-gray-700 whitespace-pre-wrap">${text}</span></div>
-                       <button onclick="deleteInstruction('role_${rId}')" class="text-red-500 hover:text-red-700 ml-4"><i data-lucide="trash" class="w-4 h-4"></i></button>
-                     </div>`;
-          }
-        }
-        if (iData.captains) {
-          for (const [cEmail, text] of Object.entries(iData.captains)) {
-            html += `<div class="bg-purple-50 border border-purple-200 rounded-lg p-3 flex justify-between items-start mb-2">
-                       <div><span class="text-[10px] font-black uppercase tracking-wider bg-purple-200 text-purple-900 px-2 py-1 rounded mr-2">Captain: ${cEmail}</span> <span class="text-sm text-gray-700 whitespace-pre-wrap">${text}</span></div>
-                       <button onclick="deleteInstruction('cap_${cEmail}')" class="text-red-500 hover:text-red-700 ml-4"><i data-lucide="trash" class="w-4 h-4"></i></button>
-                     </div>`;
-          }
-        }
-        const cci = document.getElementById('current-custom-instructions');
-        if (cci) {
-          cci.innerHTML = html || '<p class="text-sm text-gray-400">No custom instructions set yet.</p>';
-          lucide.createIcons();
-        }
+        roles = await (await fetch('/api/volunteer/tasks')).json();
+      } catch (e) {
+        roles = [];
+      }
+      document.getElementById('assign-task').innerHTML = roles.map(r => `<option value="${esc(r.id)}">${esc(r.title)}</option>`).join('');
+    }
 
-    document.getElementById('inst-target').onchange = async (e) => {
-      const target = e.target.value;
-      const iRes = await fetch('/api/instructions/all', { headers: { 'Authorization': 'Bearer ' + sessionStorage.getItem('admin_token') } });
-      const iData = await iRes.json();
-      const ta = document.getElementById('instructions-input');
-      if (target === 'global') ta.value = iData.global || '';
-      else if (target.startsWith('role_')) ta.value = (iData.roles && iData.roles[target.replace('role_', '')]) || '';
-      else if (target.startsWith('cap_')) ta.value = (iData.captains && iData.captains[target.replace('cap_', '')]) || '';
+    // ---------- live updates ----------
+    function connectLive() {
+      const dot = document.getElementById('live-dot');
+      let timer;
+      const es = new EventSource('/api/stream');
+      es.addEventListener('connected', () => { dot.className = 'inline-block w-2 h-2 rounded-full bg-emerald-500 align-middle ml-1'; });
+      es.onerror = () => { dot.className = 'inline-block w-2 h-2 rounded-full bg-gray-300 align-middle ml-1'; };
+      es.addEventListener('tasks_changed', () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => { loadBoard(); }, 300);
+      });
+    }
+
+    // ---------- task board ----------
+    async function loadBoard() {
+      try {
+        board = await api('/api/admin/tasks');
+        renderBoard();
+      } catch (e) {
+        document.getElementById('board-totals').textContent = e.message;
+      }
+    }
+
+    function progressBar(p) {
+      if (!p.total) return '<div class="h-2 rounded-full bg-gray-100"></div>';
+      const pct = n => (100 * n / p.total).toFixed(1) + '%';
+      return `<div class="h-2 rounded-full bg-gray-100 overflow-hidden flex">
+        <div class="bg-emerald-500" style="width:${pct(p.done)}"></div>
+        <div class="bg-amber-400" style="width:${pct(p.in_progress)}"></div>
+        <div class="bg-red-500" style="width:${pct(p.blocked)}"></div>
+      </div>`;
+    }
+
+    function renderBoard() {
+      const t = board.totals;
+      document.getElementById('board-totals').textContent =
+        `${t.done}/${t.total} done · ${t.in_progress} in progress` + (t.blocked ? ` · ${t.blocked} blocked` : '');
+      document.querySelectorAll('.board-filter').forEach(b => {
+        const on = b.dataset.filter === boardFilter;
+        b.className = `board-filter px-3 py-1.5 rounded-lg font-bold ${on ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`;
+      });
+
+      const html = board.roles.map(role => {
+        const capKeys = new Set(role.captains.map(c => c.key));
+        const tasks = role.tasks.filter(task =>
+          boardFilter === 'all' ? true : boardFilter === 'open' ? task.status !== 'done' : task.status === 'blocked');
+        const p = role.progress;
+        const captains = role.captains.length
+          ? role.captains.map(c => `<span class="inline-flex items-center gap-1 bg-yellow-50 border border-yellow-200 text-yellow-800 text-xs font-bold px-2 py-1 rounded-full"><i data-lucide="star" class="w-3 h-3 fill-current"></i>${esc(c.name)}</span>`).join(' ')
+          : `<div class="bg-red-50 border border-red-200 text-red-800 text-xs font-bold rounded-lg px-3 py-2 flex items-center gap-2"><i data-lucide="alert-triangle" class="w-4 h-4 shrink-0"></i> No captain yet. Nobody can update these tasks until you make someone captain in the roster below.</div>`;
+
+        const rows = tasks.map(task => {
+          const st = STATUS[task.status] || STATUS.todo;
+          const assigned = task.assignee
+            ? (capKeys.has(task.assignee.key) ? esc(task.assignee.name) : `${esc(task.assignee.name)} <span class="text-red-600">(no longer captain)</span>`)
+            : 'Whole team';
+          const lastNote = task.notes && task.notes.length ? task.notes[task.notes.length - 1] : null;
+          return `<div data-action="edit-task" data-id="${esc(task.id)}" class="cursor-pointer rounded-xl border p-3 flex gap-3 items-start hover:shadow-sm transition ${task.status === 'blocked' ? 'border-red-300 bg-red-50' : 'border-gray-100 bg-white'} ${task.status === 'done' ? 'opacity-60' : ''}">
+            <select data-action="quick-status" data-id="${esc(task.id)}" aria-label="Status" class="shrink-0 w-[5.75rem] sm:w-auto text-xs font-bold border rounded-lg px-1 py-1 ${st.cls}">
+              ${Object.entries(STATUS).map(([k, v]) => `<option value="${k}" ${k === task.status ? 'selected' : ''}>${v.label}</option>`).join('')}
+            </select>
+            <div class="min-w-0 flex-1">
+              <div class="font-bold text-gray-900 leading-snug ${task.status === 'done' ? 'line-through' : ''}">${esc(task.title)}${task.priority === 'high' ? ' <span class="align-middle text-[10px] font-black uppercase bg-red-600 text-white px-1.5 py-0.5 rounded">High</span>' : ''}</div>
+              <div class="text-xs text-gray-500 mt-0.5">${esc([timeWindow(task), task.location].filter(Boolean).join(' · '))}</div>
+              <div class="text-xs text-gray-600 mt-1 flex items-center gap-1"><i data-lucide="user" class="w-3 h-3"></i> ${assigned}${task.notes && task.notes.length ? ` <span class="ml-2 inline-flex items-center gap-1"><i data-lucide="message-square" class="w-3 h-3"></i>${task.notes.length}</span>` : ''}</div>
+              ${lastNote ? `<div class="text-xs text-gray-700 mt-1 bg-gray-50 rounded px-2 py-1 truncate"><span class="font-bold">${esc(lastNote.by)}:</span> ${esc(lastNote.text)}</div>` : ''}
+            </div>
+          </div>`;
+        }).join('');
+
+        return `<div class="border border-gray-100 rounded-2xl p-4">
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <h3 class="font-black text-gray-900">${esc(role.title)}</h3>
+              <div class="text-xs text-gray-500">${role.channel ? `Radio Ch ${role.channel} · ` : ''}${role.volunteerCount} volunteer${role.volunteerCount === 1 ? '' : 's'}</div>
+            </div>
+            <div class="text-right shrink-0">
+              <div class="font-black text-lg leading-none">${p.done}/${p.total}</div>
+              <div class="text-[11px] text-gray-500">done</div>
+              ${p.blocked ? `<div class="mt-1 text-[11px] font-black text-white bg-red-600 rounded px-1.5">${p.blocked} blocked</div>` : ''}
+            </div>
+          </div>
+          <div class="my-3">${progressBar(p)}</div>
+          <div class="flex flex-wrap gap-1 mb-3">${captains}</div>
+          <div class="flex flex-wrap gap-2 mb-3">
+            <button data-action="new-task" data-role="${esc(role.id)}" class="text-xs font-bold bg-[#1e1e1e] text-white px-3 py-2 rounded-lg flex items-center gap-1"><i data-lucide="plus" class="w-3 h-3"></i> Task</button>
+            <button data-action="open-templates" data-role="${esc(role.id)}" class="text-xs font-bold bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-2 rounded-lg">Templates / quick add</button>
+            ${role.templates.available ? `<button data-action="seed-role" data-role="${esc(role.id)}" class="text-xs font-bold bg-emerald-50 border border-emerald-200 text-emerald-800 px-3 py-2 rounded-lg">Seed ${role.templates.available} recommended</button>` : ''}
+          </div>
+          <div class="space-y-2">${rows || `<p class="text-xs text-gray-400 py-2">${role.tasks.length ? 'Nothing matches this filter.' : 'No tasks yet.'}</p>`}</div>
+        </div>`;
+      }).join('');
+      document.getElementById('board-roles').innerHTML = html || '<p class="text-sm text-gray-400">No teams found.</p>';
+      icons();
+    }
+
+    function findTask(id) {
+      for (const r of board.roles) {
+        const t = r.tasks.find(x => x.id === id);
+        if (t) return t;
+      }
+      return null;
+    }
+
+    function fillAssignees(roleId, selectedKey) {
+      const role = board.roles.find(r => r.id === roleId);
+      const caps = role ? role.captains : [];
+      const opts = [`<option value="">Whole team (any captain)</option>`]
+        .concat(caps.map(c => `<option value="${esc(c.key)}" ${c.key === selectedKey ? 'selected' : ''}>★ ${esc(c.name)}</option>`));
+      document.getElementById('tf-assignee').innerHTML = opts.join('');
+    }
+
+    function openTaskModal(task, roleId) {
+      document.getElementById('task-form').reset();
+      document.getElementById('tf-error').classList.add('hidden');
+      document.getElementById('task-modal-title').textContent = task ? 'Edit task' : 'New task';
+      document.getElementById('tf-id').value = task ? task.id : '';
+      const rid = task ? task.roleId : roleId;
+      document.getElementById('tf-role').innerHTML = board.roles.map(r => `<option value="${esc(r.id)}" ${r.id === rid ? 'selected' : ''}>${esc(r.title)}</option>`).join('');
+      fillAssignees(rid, task && task.assignee ? task.assignee.key : '');
+      document.getElementById('tf-title').value = task ? task.title : '';
+      document.getElementById('tf-details').value = task ? task.details : '';
+      document.getElementById('tf-location').value = task ? task.location : '';
+      document.getElementById('tf-start').value = task ? task.startTime : '';
+      document.getElementById('tf-end').value = task ? task.endTime : '';
+      document.getElementById('tf-priority').value = task ? task.priority : 'normal';
+      document.getElementById('tf-status').value = task ? task.status : 'todo';
+      document.getElementById('tf-delete').classList.toggle('hidden', !task);
+      const notes = task ? task.notes || [] : [];
+      document.getElementById('tf-notes-wrap').classList.toggle('hidden', !notes.length);
+      document.getElementById('tf-notes').innerHTML = notes.map(n =>
+        `<li class="text-sm bg-gray-50 rounded-lg px-3 py-2"><span class="font-bold">${esc(n.by)}</span> <span class="text-xs text-gray-400">${esc(new Date(n.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }))}</span><div class="whitespace-pre-wrap">${esc(n.text)}</div></li>`).join('');
+      showModal('task-modal');
+      icons();
+      if (!task) setTimeout(() => document.getElementById('tf-title').focus(), 50);
+    }
+
+    document.getElementById('tf-role').addEventListener('change', e => {
+      fillAssignees(e.target.value, document.getElementById('tf-assignee').value);
+    });
+
+    document.getElementById('task-form').addEventListener('submit', async e => {
+      e.preventDefault();
+      const id = document.getElementById('tf-id').value;
+      const payload = {
+        roleId: document.getElementById('tf-role').value,
+        assigneeKey: document.getElementById('tf-assignee').value || null,
+        title: document.getElementById('tf-title').value,
+        details: document.getElementById('tf-details').value,
+        location: document.getElementById('tf-location').value,
+        startTime: document.getElementById('tf-start').value,
+        endTime: document.getElementById('tf-end').value,
+        priority: document.getElementById('tf-priority').value,
+        status: document.getElementById('tf-status').value
+      };
+      const note = document.getElementById('tf-note').value.trim();
+      if (note) payload.note = note;
+      const btn = document.getElementById('tf-save');
+      btn.disabled = true;
+      try {
+        if (id) await api('/api/admin/tasks/' + encodeURIComponent(id), { method: 'PATCH', body: payload });
+        else {
+          delete payload.note;
+          const created = await api('/api/admin/tasks', { method: 'POST', body: payload });
+          if (note) await api('/api/admin/tasks/' + encodeURIComponent(created.task.id), { method: 'PATCH', body: { note } });
+        }
+        closeModals();
+        toast(id ? 'Task saved' : 'Task added');
+        loadBoard();
+      } catch (err) {
+        const el = document.getElementById('tf-error');
+        el.textContent = err.message;
+        el.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    async function openTemplates(roleId) {
+      tplRoleId = roleId;
+      document.getElementById('tpl-role-title').textContent = roleTitle(roleId);
+      document.getElementById('tpl-lines').value = '';
+      const list = document.getElementById('tpl-list');
+      list.innerHTML = '<li class="text-sm text-gray-400">Loading…</li>';
+      showModal('tpl-modal');
+      icons();
+      try {
+        const data = await api('/api/admin/tasks/templates/' + encodeURIComponent(roleId));
+        list.innerHTML = data.templates.length ? data.templates.map(t => `
+          <li><label class="flex gap-3 items-start border border-gray-100 rounded-xl p-3 ${t.state === 'available' ? 'cursor-pointer hover:bg-gray-50' : 'opacity-50'}">
+            <input type="checkbox" class="tpl-check mt-1 w-4 h-4" value="${esc(t.key)}" ${t.state === 'available' ? 'checked' : 'disabled'}>
+            <span class="min-w-0"><span class="block font-bold text-sm">${esc(t.title)}</span>
+            <span class="block text-xs text-gray-500">${esc([timeWindow(t), t.location].filter(Boolean).join(' · '))}${t.state !== 'available' ? ` · ${t.state === 'added' ? 'already added' : 'deleted earlier'}` : ''}</span></span>
+          </label></li>`).join('') : '<li class="text-sm text-gray-400">No recommended tasks for this team. Use quick add below.</li>';
+      } catch (err) {
+        list.innerHTML = `<li class="text-sm text-red-600">${esc(err.message)}</li>`;
+      }
+    }
+
+    // ---------- roster ----------
+    async function loadVolunteers() {
+      const tbody = document.getElementById('roster-tbody');
+      try {
+        const data = await api('/api/admin/volunteers');
+        volunteers = data.volunteers;
+        renderInstructionTargets();
+        if (!volunteers.length) {
+          tbody.innerHTML = '<tr><td colspan="3" class="p-4 text-center text-gray-400">No volunteers have signed up yet.</td></tr>';
+          return;
+        }
+        const people = new Map();
+        for (const v of volunteers) {
+          const k = v.personKey || 'claim_' + v.timestamp;
+          if (!people.has(k)) people.set(k, { key: v.personKey, ...v, roles: [] });
+          people.get(k).roles.push(v);
+        }
+        tbody.innerHTML = [...people.values()].map(p => {
+          const fullName = [p.firstName, p.lastName].filter(Boolean).join(' ') || p.displayName;
+          const roleRows = p.roles.map(r => `<div class="mb-1 flex flex-wrap items-center gap-1">
+              <span class="font-bold text-gray-800">${esc(roleTitle(r.taskId))}</span>
+              ${r.isCaptain ? '<span title="Team Captain" class="text-yellow-500"><i data-lucide="star" class="w-3 h-3 inline fill-current"></i></span>' : ''}
+              <span class="no-print">
+                <button data-action="toggle-captain" data-role="${esc(r.taskId)}" data-ts="${esc(r.timestamp)}" class="${r.isCaptain ? 'text-gray-500 hover:text-gray-700' : 'text-yellow-700 hover:text-yellow-900'} text-[11px] font-bold px-1.5 py-0.5 rounded border">${r.isCaptain ? 'Demote' : 'Make Captain'}</button>
+                <button data-action="remove-volunteer" data-role="${esc(r.taskId)}" data-ts="${esc(r.timestamp)}" class="text-red-500 hover:text-red-700 text-[11px] font-bold px-1.5 py-0.5 rounded border border-red-200">Remove</button>
+              </span>
+            </div>`).join('');
+          return `<tr class="hover:bg-gray-50 transition-colors align-top">
+            <td class="p-3">
+              <div class="font-bold text-gray-900">${esc(fullName)}</div>
+              ${p.signInEmail && p.signInEmail.toLowerCase() !== (p.email || '').toLowerCase() ? `<div class="text-[11px] text-gray-500">Signs in as ${esc(p.signInEmail)}</div>` : ''}
+              ${p.key ? `<button data-action="edit-person" data-key="${esc(p.key)}" class="no-print mt-1 text-[11px] font-bold text-blue-600 hover:underline">Edit</button>` : ''}
+            </td>
+            <td class="p-3 text-sm">
+              <a href="mailto:${esc(p.email)}" class="text-blue-600 hover:underline break-all">${esc(p.email)}</a>
+              <div><a href="tel:${esc(p.phone)}" class="text-gray-700">${esc(p.phone)}</a></div>
+            </td>
+            <td class="p-3 text-sm">${roleRows}</td>
+          </tr>`;
+        }).join('');
+        icons();
+      } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="3" class="p-4 text-center text-red-500">${esc(e.message)}</td></tr>`;
+      }
+    }
+
+    function openPersonModal(key) {
+      const v = volunteers.find(x => x.personKey === key);
+      if (!v) return;
+      document.getElementById('pf-error').classList.add('hidden');
+      document.getElementById('pf-key').value = key;
+      document.getElementById('pf-first').value = v.firstName || '';
+      document.getElementById('pf-last').value = v.lastName || '';
+      document.getElementById('pf-email').value = v.email === 'Error decrypting' ? '' : v.email;
+      document.getElementById('pf-phone').value = v.phone === 'N/A' ? '' : v.phone;
+      document.getElementById('pf-signin').value = v.signInEmail || '';
+      showModal('person-modal');
+      icons();
+    }
+
+    document.getElementById('person-form').addEventListener('submit', async e => {
+      e.preventDefault();
+      const key = document.getElementById('pf-key').value;
+      try {
+        await api('/api/admin/people/' + encodeURIComponent(key), {
+          method: 'PATCH',
+          body: {
+            firstName: document.getElementById('pf-first').value,
+            lastName: document.getElementById('pf-last').value,
+            email: document.getElementById('pf-email').value,
+            phone: document.getElementById('pf-phone').value,
+            signInEmail: document.getElementById('pf-signin').value
+          }
+        });
+        closeModals();
+        toast('Volunteer updated');
+        loadVolunteers();
+        loadBoard();
+      } catch (err) {
+        const el = document.getElementById('pf-error');
+        el.textContent = err.message;
+        el.classList.remove('hidden');
+      }
+    });
+
+    // ---------- admins ----------
+    function renderAdmins(data) {
+      document.getElementById('admins-list').innerHTML = data.allowedAdmins.map(email => `
+        <li class="p-3 flex items-center justify-between gap-2">
+          <span class="font-medium text-gray-900 break-all">${esc(email)}${email === data.me ? ' <span class="text-xs text-gray-400">(you)</span>' : ''}</span>
+          ${email !== data.me && data.allowedAdmins.length > 1 ? `<button data-action="remove-admin" data-email="${esc(email)}" class="text-red-500 hover:text-red-700 text-xs font-bold px-2 py-1 rounded border border-red-200 shrink-0">Remove</button>` : ''}
+        </li>`).join('');
+    }
+    async function loadAdmins() {
+      try { renderAdmins(await api('/api/admin/admins')); } catch (e) { toast(e.message, false); }
+    }
+
+    // ---------- hackathon teams & scores ----------
+    async function loadTeams() {
+      try {
+        const data = await (await fetch('/api/teams')).json();
+        document.getElementById('teams-list').innerHTML = (data.teams || []).map(t => `
+          <li class="py-2 flex items-center justify-between gap-2">
+            <span><span class="font-bold">${esc(t.teamName)}</span> <span class="text-xs text-gray-500">${esc(t.track)}</span></span>
+            <button data-action="delete-team" data-name="${esc(t.teamName)}" class="text-red-500 hover:text-red-700 text-xs font-bold">Remove</button>
+          </li>`).join('') || '<li class="py-2 text-gray-400">No teams yet.</li>';
+      } catch (e) {}
+    }
+    async function loadScores() {
+      try {
+        const data = await (await fetch('/api/scores')).json();
+        document.getElementById('scores-tbody').innerHTML = (data.scores || []).map(s => `
+          <tr>
+            <td class="p-3">${esc(s.teamName)}</td>
+            <td class="p-3">${esc(s.judgeName)}</td>
+            <td class="p-3">${esc(s.track)}</td>
+            <td class="p-3 font-bold">${esc(s.totalScore)}</td>
+            <td class="p-3"><button data-action="delete-score" data-id="${esc(s.id)}" class="text-red-500 hover:text-red-700 text-xs font-bold">Delete</button></td>
+          </tr>`).join('') || '<tr><td colspan="5" class="p-3 text-center text-gray-400">No scores yet.</td></tr>';
+      } catch (e) {}
+    }
+
+    // ---------- instructions ----------
+    async function renderInstructionTargets() {
+      document.getElementById('opt-roles').innerHTML = roles.map(r => `<option value="role_${esc(r.id)}">📋 ${esc(r.title)}</option>`).join('');
+      const seen = new Set();
+      document.getElementById('opt-captains').innerHTML = volunteers.filter(v => v.isCaptain && !seen.has(v.email) && seen.add(v.email))
+        .map(v => `<option value="cap_${esc(v.email)}">⭐ ${esc(v.displayName)} (${esc(roleTitle(v.taskId))})</option>`).join('');
+      try {
+        const iData = await api('/api/instructions/all');
+        const item = (color, label, target, text) => `<div class="bg-${color}-50 border border-${color}-200 rounded-lg p-3 flex justify-between items-start gap-3">
+            <div class="min-w-0"><span class="text-[10px] font-black uppercase tracking-wider bg-${color}-200 text-${color}-900 px-2 py-1 rounded mr-2">${esc(label)}</span> <span class="text-sm text-gray-700 whitespace-pre-wrap break-words">${esc(text)}</span></div>
+            <button data-action="delete-instruction" data-target="${esc(target)}" class="text-red-500 hover:text-red-700 shrink-0" aria-label="Delete"><i data-lucide="trash" class="w-4 h-4"></i></button>
+          </div>`;
+        let html = '';
+        if (iData.global) html += item('gray', 'Global', 'global', iData.global);
+        for (const [rId, text] of Object.entries(iData.roles || {})) html += item('blue', 'Role: ' + roleTitle(rId), 'role_' + rId, text);
+        for (const [email, text] of Object.entries(iData.captains || {})) html += item('purple', 'Captain: ' + email, 'cap_' + email, text);
+        document.getElementById('current-custom-instructions').innerHTML = html || '<p class="text-sm text-gray-400">No custom instructions set yet.</p>';
+        icons();
+        document.getElementById('inst-target').onchange = e => {
+          const target = e.target.value;
+          const ta = document.getElementById('instructions-input');
+          if (target === 'global') ta.value = iData.global || '';
+          else if (target.startsWith('role_')) ta.value = (iData.roles || {})[target.slice(5)] || '';
+          else if (target.startsWith('cap_')) ta.value = (iData.captains || {})[target.slice(4)] || '';
+        };
+      } catch (e) {
+        console.error('instructions', e);
+      }
+    }
+
+    // ---------- actions (event delegation; no inline handlers with data in them) ----------
+    const actions = {
+      'refresh-board': () => loadBoard(),
+      'refresh-roster': () => loadVolunteers(),
+      'refresh-scores': () => loadScores(),
+      'filter': el => { boardFilter = el.dataset.filter; renderBoard(); },
+      'close-modal': () => closeModals(),
+      'new-task': el => openTaskModal(null, el.dataset.role),
+      'edit-task': el => { const t = findTask(el.dataset.id); if (t) openTaskModal(t); },
+      'open-templates': el => openTemplates(el.dataset.role),
+      'seed-all': async el => {
+        if (!confirm('Add the recommended tasks to every team? Tasks that already exist or that you deleted are skipped.')) return;
+        el.disabled = true;
+        try {
+          const r = await api('/api/admin/tasks/seed', { method: 'POST', body: { roleId: 'all' } });
+          toast(`Added ${r.created} task${r.created === 1 ? '' : 's'}${r.skipped ? `, skipped ${r.skipped} already present` : ''}`);
+          loadBoard();
+        } catch (e) { toast(e.message, false); } finally { el.disabled = false; }
+      },
+      'seed-role': async el => {
+        el.disabled = true;
+        try {
+          const r = await api('/api/admin/tasks/seed', { method: 'POST', body: { roleId: el.dataset.role } });
+          toast(`Added ${r.created} recommended task${r.created === 1 ? '' : 's'}`);
+          loadBoard();
+        } catch (e) { toast(e.message, false); el.disabled = false; }
+      },
+      'add-templates': async () => {
+        const keys = [...document.querySelectorAll('.tpl-check:checked')].map(c => c.value);
+        if (!keys.length) return toast('Nothing selected', false);
+        try {
+          const r = await api('/api/admin/tasks/seed', { method: 'POST', body: { roleId: tplRoleId, keys } });
+          closeModals();
+          toast(`Added ${r.created} task${r.created === 1 ? '' : 's'}`);
+          loadBoard();
+        } catch (e) { toast(e.message, false); }
+      },
+      'add-lines': async () => {
+        const lines = document.getElementById('tpl-lines').value.split('\n').map(s => s.trim()).filter(Boolean);
+        if (!lines.length) return toast('Type at least one task', false);
+        try {
+          const r = await api('/api/admin/tasks/bulk', { method: 'POST', body: { roleId: tplRoleId, tasks: lines } });
+          closeModals();
+          toast(`Added ${r.created} task${r.created === 1 ? '' : 's'}`);
+          loadBoard();
+        } catch (e) { toast(e.message, false); }
+      },
+      'delete-task': async () => {
+        const id = document.getElementById('tf-id').value;
+        if (!id || !confirm('Delete this task? This cannot be undone.')) return;
+        try {
+          await api('/api/admin/tasks/' + encodeURIComponent(id), { method: 'DELETE' });
+          closeModals();
+          toast('Task deleted');
+          loadBoard();
+        } catch (e) { toast(e.message, false); }
+      },
+      'toggle-captain': async el => {
+        try {
+          await api('/api/admin/volunteers/' + encodeURIComponent(el.dataset.role) + '/captain', { method: 'POST', body: { timestamp: Number(el.dataset.ts) } });
+          loadVolunteers();
+          loadBoard();
+        } catch (e) { toast(e.message, false); }
+      },
+      'remove-volunteer': async el => {
+        if (!confirm('Remove this volunteer from this team?')) return;
+        try {
+          await api('/api/admin/volunteers/' + encodeURIComponent(el.dataset.role), { method: 'DELETE', body: { timestamp: Number(el.dataset.ts) } });
+          loadVolunteers();
+          loadBoard();
+        } catch (e) { toast(e.message, false); }
+      },
+      'edit-person': el => openPersonModal(el.dataset.key),
+      'assign-volunteer': async () => {
+        const body = {
+          taskId: document.getElementById('assign-task').value,
+          firstName: document.getElementById('assign-fname').value,
+          lastName: document.getElementById('assign-lname').value,
+          email: document.getElementById('assign-email').value,
+          phone: document.getElementById('assign-phone').value,
+          isCaptain: document.getElementById('assign-captain').checked
+        };
+        if (!body.firstName || !body.email || !body.taskId) return toast('First name, email and team are required.', false);
+        try {
+          await api('/api/admin/assign', { method: 'POST', body });
+          ['assign-fname', 'assign-lname', 'assign-email', 'assign-phone'].forEach(id => { document.getElementById(id).value = ''; });
+          document.getElementById('assign-captain').checked = false;
+          toast('Volunteer assigned');
+          loadVolunteers();
+          loadBoard();
+        } catch (e) { toast(e.message, false); }
+      },
+      'add-admin': async () => {
+        const input = document.getElementById('new-admin-email');
+        if (!input.value) return;
+        try {
+          await api('/api/admin/add_admin', { method: 'POST', body: { newAdminEmail: input.value } });
+          input.value = '';
+          loadAdmins();
+        } catch (e) { toast(e.message, false); }
+      },
+      'remove-admin': async el => {
+        if (!confirm(`Remove ${el.dataset.email} as an admin? Their access ends immediately.`)) return;
+        try {
+          await api('/api/admin/remove_admin', { method: 'POST', body: { email: el.dataset.email } });
+          loadAdmins();
+        } catch (e) { toast(e.message, false); }
+      },
+      'add-team': async () => {
+        const name = document.getElementById('new-team-name').value.trim();
+        if (!name) return;
+        try {
+          await api('/api/teams', { method: 'POST', body: { teamName: name, track: document.getElementById('new-team-track').value } });
+          document.getElementById('new-team-name').value = '';
+          loadTeams();
+        } catch (e) { toast(e.message, false); }
+      },
+      'delete-team': async el => {
+        if (!confirm(`Remove team ${el.dataset.name}?`)) return;
+        try { await api('/api/teams/' + encodeURIComponent(el.dataset.name), { method: 'DELETE' }); loadTeams(); } catch (e) { toast(e.message, false); }
+      },
+      'delete-score': async el => {
+        if (!confirm('Delete this score?')) return;
+        try { await api('/api/scores/' + encodeURIComponent(el.dataset.id), { method: 'DELETE' }); loadScores(); } catch (e) { toast(e.message, false); }
+      },
+      'save-instructions': async () => {
+        try {
+          await api('/api/instructions', { method: 'POST', body: { target: document.getElementById('inst-target').value, text: document.getElementById('instructions-input').value } });
+          document.getElementById('instructions-input').value = '';
+          toast('Instructions saved');
+          renderInstructionTargets();
+        } catch (e) { toast(e.message, false); }
+      },
+      'delete-instruction': async el => {
+        if (!confirm('Delete this instruction?')) return;
+        try { await api('/api/instructions', { method: 'POST', body: { target: el.dataset.target, text: '' } }); renderInstructionTargets(); } catch (e) { toast(e.message, false); }
+      },
+      'send-blast': async () => {
+        const text = document.getElementById('blast-input').value;
+        if (!text) return;
+        try {
+          await api('/api/blast', { method: 'POST', body: { message: text } });
+          document.getElementById('blast-input').value = '';
+          toast('Blast message triggered!');
+        } catch (e) { toast(e.message, false); }
+      }
     };
 
-      } catch(e) {
-        console.error("loadInstructionTargets error:", e);
-      }
-    }
-    
-    async function deleteInstruction(target) {
-      if(!confirm('Delete this instruction?')) return;
-      try {
-        const res = await fetch('/api/instructions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionStorage.getItem('admin_token') },
-          body: JSON.stringify({ target, text: '' })
-        });
-        if (res.ok) {
-          loadInstructionTargets();
-        }
-      } catch(e) {}
-    }
+    document.addEventListener('click', e => {
+      const el = e.target.closest('[data-action]');
+      if (!el || el.tagName === 'SELECT') return;
+      const fn = actions[el.dataset.action];
+      if (fn) { e.preventDefault(); fn(el); }
+    });
 
-    async function saveInstructions() {
-      const text = document.getElementById('instructions-input').value;
-      const targetEl = document.getElementById('inst-target');
-      const target = targetEl ? targetEl.value : 'global';
-      
+    // Inline status change on a task row. The select is its own closest
+    // [data-action], so tapping it never opens the row's editor.
+    document.addEventListener('change', async e => {
+      const el = e.target.closest('select[data-action="quick-status"]');
+      if (!el) return;
+      el.disabled = true;
       try {
-        const res = await fetch('/api/instructions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionStorage.getItem('admin_token') },
-          body: JSON.stringify({ target, text })
-        });
-        const data = await res.json();
-        if (data.success) {
-          alert('Instructions saved!');
-          document.getElementById('instructions-input').value = '';
-          loadInstructionTargets();
-        } else {
-          alert('Failed to save instructions');
-        }
-      } catch (e) {
-        alert('Network error');
-      }
-    }
+        await api('/api/admin/tasks/' + encodeURIComponent(el.dataset.id), { method: 'PATCH', body: { status: el.value } });
+        loadBoard();
+      } catch (err) { toast(err.message, false); loadBoard(); }
+    });
 
-    async function sendBlast() {
-      const text = document.getElementById('blast-input').value;
-      if(!text) return;
-      const res = await fetch('/api/blast', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionStorage.getItem('admin_token') },
-        body: JSON.stringify({ message: text })
-      });
-      if (res.ok) {
-        alert('Blast message triggered!');
-        document.getElementById('blast-input').value = '';
-      }
-    }
+    document.querySelectorAll('#task-modal, #tpl-modal, #person-modal').forEach(m => m.addEventListener('click', e => { if (e.target === m) closeModals(); }));
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModals(); });
+
+    icons();
+    checkStatus();
   </script>
 </body>
 </html>
