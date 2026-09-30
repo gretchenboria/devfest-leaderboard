@@ -597,6 +597,22 @@ app.get('/api/leaderboard', (req, res) => {
 
 // Get raw scores list
 
+
+// Delete a specific score
+app.delete('/api/scores/:id', requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const initialLength = appState.scores.length;
+  appState.scores = appState.scores.filter(s => s.id !== id);
+  if (appState.scores.length < initialLength) {
+    appState.lastSyncTime = new Date().toISOString();
+    await saveScoresToGCS();
+    broadcast('sync', { message: 'A score was deleted.' });
+    res.json({ success: true });
+  } else {
+    res.status(404).json({ success: false, error: 'Score not found' });
+  }
+});
+
 // --- SERVER-SENT EVENTS (SSE) FOR SILENT BACKGROUND UPDATES ---
 let sseClients = [];
 
