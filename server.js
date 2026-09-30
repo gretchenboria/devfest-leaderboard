@@ -13,7 +13,26 @@ const { Storage } = require('@google-cloud/storage');
 
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'devving';
-const ENCRYPTION_KEY = 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4';
+// 32-byte hex key, injected from Secret Manager (leaderboard-encryption-key)
+if (!/^[0-9a-f]{64}$/i.test(process.env.ENCRYPTION_KEY || '')) {
+  throw new Error('ENCRYPTION_KEY must be set to 64 hex characters');
+}
+const ENCRYPTION_KEY = Buffer.from(process.env.ENCRYPTION_KEY, 'hex');
+
+// Returns "ivHex:cipherHex" with a fresh IV per value
+function encryptField(plaintext) {
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv('aes-256-cbc', ENCRYPTION_KEY, iv);
+  return iv.toString('hex') + ':' + cipher.update(plaintext, 'utf8', 'hex') + cipher.final('hex');
+}
+
+function decryptField(data) {
+  const parts = data.split(':');
+  const iv = Buffer.from(parts.shift(), 'hex');
+  const decipher = crypto.createDecipheriv('aes-256-cbc', ENCRYPTION_KEY, iv);
+  return Buffer.concat([decipher.update(Buffer.from(parts.join(':'), 'hex')), decipher.final()]).toString();
+}
+
 const ADMIN_BEARER_TOKEN = crypto.createHash('sha256').update(ADMIN_PASSWORD).digest('hex');
 
 const app = express();
@@ -426,6 +445,9 @@ async function restoreFromCloudStorage() {
       appState.scores = parsed.scores;
       appState.gcsBackupTime = parsed.gcsBackupTime;
       appState.gcsStatus = "Restored from GCS";
+      for (const k of ['claims', 'allowedAdmins', 'volunteerInstructions', 'roleInstructions', 'captainInstructions']) {
+        if (parsed[k]) appState[k] = parsed[k];
+      }
       return true;
     }
   } catch (err) {
@@ -992,26 +1014,10 @@ async function notifyAdminOfSignup() {
     claims.forEach(c => {
       // Decrypt the email for the admin
       let decryptedEmail = "Error decrypting";
+      let decryptedPhone = "N/A";
       try {
-        const parts = c.encryptedEmail.split(':');
-        const iv = Buffer.from(parts.shift(), 'hex');
-        const encryptedText = Buffer.from(parts.join(':'), 'hex');
-        const decipher = crypto.createDecipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY), iv);
-        let decrypted = decipher.update(encryptedText);
-        decrypted = Buffer.concat([decrypted, decipher.final()]);
-        decryptedEmail = decrypted.toString();
-        
-        let decryptedPhone = "N/A";
-        if (c.phoneData) {
-          const pParts = c.phoneData.split(':');
-          const pIv = Buffer.from(pParts.shift(), 'hex');
-          const pEncryptedText = Buffer.from(pParts.join(':'), 'hex');
-          const pDecipher = crypto.createDecipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY), pIv);
-          let pDec = pDecipher.update(pEncryptedText);
-          pDec = Buffer.concat([pDec, pDecipher.final()]);
-          decryptedPhone = pDec.toString();
-        }
-        c.decryptedPhone = decryptedPhone;
+        decryptedEmail = decryptField(c.emailData);
+        if (c.phoneData) decryptedPhone = decryptField(c.phoneData);
       } catch (e) {
         console.error("Decryption failed for email", e);
       }
@@ -1021,7 +1027,7 @@ async function notifyAdminOfSignup() {
         <td>${c.firstName}</td>
         <td>${c.lastInitial}</td>
         <td><a href="mailto:${decryptedEmail}">${decryptedEmail}</a></td>
-        <td>${c.decryptedPhone || 'N/A'}</td>
+        <td>${decryptedPhone}</td>
       </tr>`;
     });
 
@@ -1043,23 +1049,11 @@ app.post('/api/volunteer/claim', async (req, res) => {
   const { taskId, firstName, lastInitial, email, phoneNumber } = req.body;
   if (!taskId || !firstName || !email || !phoneNumber) return res.status(400).json({ error: 'Missing required fields' });
   
-  // Encrypt email (minimal PII security)
-  const algorithm = 'aes-256-cbc';
-  const key = crypto.scryptSync('devfest2026_secret_key', 'salt', 32);
-  const iv = crypto.randomBytes(16);
-  const cipher = crypto.createCipheriv(algorithm, key, iv);
-  let encryptedEmail = cipher.update(email, 'utf8', 'hex');
-  encryptedEmail += cipher.final('hex');
-  
-  const cipherPhone = crypto.createCipheriv(algorithm, key, iv);
-  let encryptedPhone = cipherPhone.update(phoneNumber, 'utf8', 'hex');
-  encryptedPhone += cipherPhone.final('hex');
-  
   const claimRecord = {
     taskId,
     displayName: `${firstName} ${lastInitial}.`,
-    emailData: `${iv.toString('hex')}:${encryptedEmail}`, // securely stored
-    phoneData: `${iv.toString('hex')}:${encryptedPhone}`,
+    emailData: encryptField(email),
+    phoneData: encryptField(phoneNumber),
     timestamp: Date.now()
   };
   
@@ -1071,13 +1065,7 @@ app.post('/api/volunteer/claim', async (req, res) => {
     let c = claims[i];
     if (c.taskId === taskId && c.emailData) {
       try {
-        const parts = c.emailData.split(':');
-        const civ = Buffer.from(parts.shift(), 'hex');
-        const cEncryptedText = Buffer.from(parts.join(':'), 'hex');
-        const ccipher = crypto.createDecipheriv('aes-256-cbc', key, civ);
-        let dec = ccipher.update(cEncryptedText);
-        dec = Buffer.concat([dec, ccipher.final()]);
-        if (dec.toString().toLowerCase() === email.toLowerCase()) {
+        if (decryptField(c.emailData).toLowerCase() === email.toLowerCase()) {
           existingIndex = i;
           break;
         }
@@ -1231,25 +1219,11 @@ app.post('/api/admin/assign', requireAdmin, async (req, res) => {
   const existingCount = (appState.claims || []).filter(c => c.taskId === taskId).length;
   // Let admins override the cap of 10 if they want, or enforce it? Let's just bypass cap for Admins.
 
-  // Encrypt
-  const cipherEmail = crypto.createCipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY), iv);
-  let encryptedEmail = cipherEmail.update(email, 'utf8', 'hex');
-  encryptedEmail += cipherEmail.final('hex');
-  encryptedEmail = iv.toString('hex') + ':' + encryptedEmail;
-  
-  let encryptedPhone = '';
-  if (phone) {
-    const cipherPhone = crypto.createCipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY), iv);
-    encryptedPhone = cipherPhone.update(phone, 'utf8', 'hex');
-    encryptedPhone += cipherPhone.final('hex');
-    encryptedPhone = iv.toString('hex') + ':' + encryptedPhone;
-  }
-
   const claimRecord = {
     taskId,
     displayName: `${firstName} ${lastInitial || 'X'}.`,
-    emailData: encryptedEmail,
-    phoneData: encryptedPhone,
+    emailData: encryptField(email),
+    phoneData: phone ? encryptField(phone) : '',
     timestamp: Date.now(),
     isCaptain: !!isCaptain
   };
@@ -1289,31 +1263,13 @@ app.get('/api/admin/volunteers', requireAdmin, (req, res) => {
     const results = claims.map(c => {
       let decryptedEmail = "Error decrypting";
       try {
-        if (c.emailData) {
-          const parts = c.emailData.split(':');
-          const iv = Buffer.from(parts.shift(), 'hex');
-          const encryptedText = Buffer.from(parts.join(':'), 'hex');
-          const key = crypto.scryptSync('devfest2026_secret_key', 'salt', 32);
-          const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
-          let decrypted = decipher.update(encryptedText);
-          decrypted = Buffer.concat([decrypted, decipher.final()]);
-          decryptedEmail = decrypted.toString();
-        }
+        if (c.emailData) decryptedEmail = decryptField(c.emailData);
       } catch (e) {
         console.error("Decryption failed for email", e);
       }
       let decryptedPhone = 'N/A';
       try {
-        if (c.phoneData) {
-          const parts = c.phoneData.split(':');
-          const iv = Buffer.from(parts.shift(), 'hex');
-          const encryptedText = Buffer.from(parts.join(':'), 'hex');
-          const key = crypto.scryptSync('devfest2026_secret_key', 'salt', 32);
-          const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
-          let decrypted = decipher.update(encryptedText);
-          decrypted = Buffer.concat([decrypted, decipher.final()]);
-          decryptedPhone = decrypted.toString();
-        }
+        if (c.phoneData) decryptedPhone = decryptField(c.phoneData);
       } catch (e) {}
       return {
         taskId: c.taskId,
