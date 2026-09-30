@@ -83,5 +83,41 @@
     return { poll };
   }
 
-  window.DevFestBlast = { init };
+  // ---- "Text from my phone": group SMS links opened on the organizer's phone ----
+  const SMS_GROUP_SIZE = 20;
+
+  function smsPlatform(ua, maxTouchPoints) {
+    ua = String(ua || '');
+    if (/iPhone|iPad|iPod/i.test(ua) || (/Macintosh/.test(ua) && maxTouchPoints > 1)) return 'ios';
+    if (/Android/i.test(ua)) return 'android';
+    return 'desktop';
+  }
+
+  // iOS: sms://open?addresses=+1…,+1…&body=…   Android: sms:+1…,+1…?body=…
+  function smsHref(platform, numbers, message) {
+    const to = numbers.join(',');
+    const body = encodeURIComponent(message);
+    return platform === 'ios' ? `sms://open?addresses=${to}&body=${body}` : `sms:${to}?body=${body}`;
+  }
+
+  function smsGroups(numbers, size = SMS_GROUP_SIZE) {
+    const out = [];
+    for (let i = 0; i < numbers.length; i += size) out.push(numbers.slice(i, i + size));
+    return out;
+  }
+
+  // One entry per group and platform to show ("desktop" shows both formats).
+  function smsLinks(numbers, message, platform) {
+    const platforms = platform === 'desktop' ? ['ios', 'android'] : [platform];
+    const groups = smsGroups(numbers);
+    const links = [];
+    groups.forEach((g, i) => platforms.forEach(p => links.push({
+      platform: p, group: i + 1, total: groups.length, count: g.length, href: smsHref(p, g, message)
+    })));
+    return links;
+  }
+
+  const api = { init, sms: { SMS_GROUP_SIZE, smsPlatform, smsHref, smsGroups, smsLinks } };
+  if (typeof window !== 'undefined') window.DevFestBlast = api;
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })();

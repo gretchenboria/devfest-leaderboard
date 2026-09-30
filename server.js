@@ -13,6 +13,7 @@ const { Storage } = require('@google-cloud/storage');
 const { mergeRemoteState, normalizeInstructions } = require('./lib/stateMerge');
 const { recommendedInstructions, VENUE_NOTES } = require('./lib/eventInstructions');
 const { createSessionSigner, bearerToken } = require('./lib/session');
+const { normalizePhone, chunk } = require('./lib/phone');
 const {
   TaskError, LIMITS: TASK_LIMITS, normalizeFields, cleanStatus, cleanNote, createTask, applyUpdate, addNote,
   makeTombstone, liveTasks, compareTasks, publicTask, progressOf
@@ -2285,6 +2286,40 @@ app.get('/api/blast/latest', async (req, res) => {
 
 app.get('/api/admin/email/status', requireAdmin, (req, res) => {
   res.json({ configured: emailConfigured(), testRecipient: process.env.ADMIN_EMAIL || req.session.email });
+});
+// Decrypted, normalized volunteer phone numbers for "Text from my phone"
+// (the organizer opens group-text links on their own phone). Judges have no
+// phone numbers on file. Numbers are never logged.
+const SMS_GROUP_SIZE = 20;
+app.get('/api/admin/sms/recipients', requireAdmin, async (req, res) => {
+  try {
+    const audience = req.query.audience === undefined ? 'volunteers' : String(req.query.audience);
+    if (!BLAST_AUDIENCES.includes(audience)) return res.status(400).json({ error: 'Audience must be volunteers, judges or both' });
+    res.set('Cache-Control', 'no-store');
+    const numbers = [];
+    const counts = { signups: 0, missing: 0, invalid: 0, duplicates: 0, numbers: 0, groups: 0 };
+    if (audience !== 'judges') {
+      await refreshFromCloud();
+      const seen = new Set();
+      for (const c of appState.claims) {
+        counts.signups++;
+        const raw = safeDecrypt(c.phoneData);
+        if (!raw.trim()) { counts.missing++; continue; }
+        const n = normalizePhone(raw);
+        if (!n) { counts.invalid++; continue; }
+        if (seen.has(n)) { counts.duplicates++; continue; }
+        seen.add(n);
+        numbers.push(n);
+      }
+    }
+    const groups = chunk(numbers, SMS_GROUP_SIZE);
+    counts.numbers = numbers.length;
+    counts.groups = groups.length;
+    res.json({ success: true, audience, groupSize: SMS_GROUP_SIZE, numbers, groups, counts,
+      judgesEmailOnly: audience !== 'volunteers' });
+  } catch (err) {
+    sendError(res, err);
+  }
 });
 // ----------------------------------
 

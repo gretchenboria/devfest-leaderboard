@@ -233,8 +233,18 @@
         <div class="flex flex-wrap gap-2">
           <button data-action="send-blast" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-6 rounded-xl text-sm transition shadow-sm shadow-red-200">Send Blast</button>
           <button data-action="test-blast" class="bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-2 px-4 rounded-xl text-sm transition">Send test to me</button>
+          <button data-action="sms-blast" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-xl text-sm transition">Text from my phone</button>
         </div>
         <p id="blast-result" class="hidden mt-3 text-sm rounded-lg px-3 py-2 border"></p>
+        <div id="sms-panel" class="hidden mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950">
+          <p class="text-xs font-bold mb-2">Sends from your own phone number; recipients may see each other in the group text.</p>
+          <p id="sms-summary" class="text-xs mb-3"></p>
+          <div id="sms-links" class="flex flex-col gap-2 mb-3"></div>
+          <div class="flex flex-wrap gap-2">
+            <button data-action="sms-copy-numbers" class="bg-white hover:bg-gray-100 border border-emerald-300 text-emerald-900 font-bold py-1.5 px-3 rounded-lg text-xs">Copy all numbers</button>
+            <button data-action="sms-copy-message" class="bg-white hover:bg-gray-100 border border-emerald-300 text-emerald-900 font-bold py-1.5 px-3 rounded-lg text-xs">Copy message</button>
+          </div>
+        </div>
       </div>
 
       <a href="/volunteer" target="_blank" class="text-blue-600 text-sm font-bold hover:underline">View Volunteer Hub &rarr;</a>
@@ -358,6 +368,7 @@
 
   <div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] hidden px-4 py-3 rounded-xl shadow-lg text-sm font-bold text-white max-w-[90vw]"></div>
 
+  <script src="/blast.js"></script>
   <script>
     const SESSION_KEY = 'devfest_session';
     const STATUS = {
@@ -913,7 +924,81 @@
     }
     document.getElementById('blast-input').addEventListener('input', e => {
       document.getElementById('blast-count').textContent = e.target.value.length;
+      if (smsState) renderSmsLinks();
     });
+    document.getElementById('blast-audience').addEventListener('change', () => {
+      smsState = null;
+      document.getElementById('sms-panel').classList.add('hidden');
+    });
+
+    // "Text from my phone": group-text links with the numbers and message filled in.
+    let smsState = null; // { numbers, counts, judgesEmailOnly, audience }
+    const SMS = window.DevFestBlast.sms;
+    const smsPlatform = SMS.smsPlatform(navigator.userAgent, navigator.maxTouchPoints);
+    function renderSmsLinks() {
+      const message = document.getElementById('blast-input').value.trim();
+      const box = document.getElementById('sms-links');
+      box.replaceChildren();
+      if (!message) {
+        const p = document.createElement('p');
+        p.className = 'text-xs font-bold text-red-700';
+        p.textContent = 'Type a message first.';
+        box.append(p);
+        return;
+      }
+      const links = SMS.smsLinks(smsState.numbers, message, smsPlatform);
+      for (const l of links) {
+        const a = document.createElement('a');
+        a.href = l.href;
+        a.dataset.smsPlatform = l.platform;
+        a.className = 'block text-center bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-xl text-sm';
+        const tag = smsPlatform === 'desktop' ? (l.platform === 'ios' ? ' — iPhone' : ' — Android') : '';
+        a.textContent = `Open group text (${l.group}/${l.total})${tag} · ${l.count} number${l.count === 1 ? '' : 's'}`;
+        box.append(a);
+      }
+    }
+    async function openSmsPanel(btn) {
+      const message = document.getElementById('blast-input').value.trim();
+      if (!message) return toast('Type a message first', false);
+      const audience = document.getElementById('blast-audience').value;
+      btn.disabled = true;
+      try {
+        const r = await api('/api/admin/sms/recipients?audience=' + encodeURIComponent(audience));
+        smsState = { numbers: r.numbers, counts: r.counts, judgesEmailOnly: r.judgesEmailOnly, audience };
+        const c = r.counts;
+        const parts = [];
+        if (audience !== 'judges') {
+          parts.push(`${c.numbers} volunteer number${c.numbers === 1 ? '' : 's'} in ${c.groups} group${c.groups === 1 ? '' : 's'} of up to ${r.groupSize}`);
+          const extra = [];
+          if (c.duplicates) extra.push(`${c.duplicates} duplicate${c.duplicates === 1 ? '' : 's'} removed`);
+          if (c.invalid) extra.push(`${c.invalid} invalid skipped`);
+          if (c.missing) extra.push(`${c.missing} sign-up${c.missing === 1 ? '' : 's'} without a phone`);
+          if (extra.length) parts.push(extra.join(', '));
+        }
+        if (r.judgesEmailOnly) parts.push('Judges: email only (no phone numbers on file)');
+        if (smsPlatform === 'desktop') parts.push('On a computer: both iPhone and Android links are shown; open this page on your phone to text');
+        document.getElementById('sms-summary').textContent = parts.join('. ') + '.';
+        document.getElementById('sms-panel').classList.remove('hidden');
+        renderSmsLinks();
+      } catch (e) {
+        showBlastResult(e.message, 'err');
+      } finally { btn.disabled = false; }
+    }
+    async function copyText(text, what) {
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (e) {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.cssText = 'position:fixed;opacity:0';
+        document.body.append(ta);
+        ta.select();
+        const ok = document.execCommand('copy');
+        ta.remove();
+        if (!ok) return toast('Could not copy — select and copy manually', false);
+      }
+      toast(`Copied ${what}`);
+    }
 
     // ---------- actions (event delegation; no inline handlers with data in them) ----------
     const actions = {
@@ -1069,7 +1154,17 @@
         } catch (e) { toast(e.message, false); }
       },
       'send-blast': el => sendBlast(el, false),
-      'test-blast': el => sendBlast(el, true)
+      'test-blast': el => sendBlast(el, true),
+      'sms-blast': el => openSmsPanel(el),
+      'sms-copy-numbers': () => {
+        if (!smsState || !smsState.numbers.length) return toast('No phone numbers to copy', false);
+        copyText(smsState.numbers.join('\n'), `${smsState.numbers.length} number${smsState.numbers.length === 1 ? '' : 's'}`);
+      },
+      'sms-copy-message': () => {
+        const message = document.getElementById('blast-input').value.trim();
+        if (!message) return toast('Type a message first', false);
+        copyText(message, 'message');
+      }
     };
 
     document.addEventListener('click', e => {
