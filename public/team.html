@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DevFest Bay Area 2026 | Team</title>
+  <link rel="icon" type="image/png" href="/assets/hot-sauce-sticker.png">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <style>
+    body { background-color: #f0f0f0; color: #1e1e1e; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+    .loader { border: 3px solid #e5e7eb; border-top: 3px solid #4285F4; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+  </style>
+</head>
+<body class="min-h-screen pb-16">
+  <header class="bg-[#1e1e1e] text-white sticky top-0 z-40 shadow-md">
+    <div class="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
+      <div class="flex items-center gap-3 min-w-0">
+        <img src="/assets/hot-sauce-sticker.png" alt="" class="h-8 w-8">
+        <h1 class="text-lg font-bold tracking-tight truncate">DevFest Team</h1>
+      </div>
+      <button id="signout-btn" data-action="sign-out" class="hidden text-xs font-bold bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg">Sign out</button>
+    </div>
+  </header>
+
+  <main class="max-w-2xl mx-auto px-4 py-5">
+    <!-- Sign in -->
+    <section id="signin" class="hidden bg-white rounded-3xl p-6 shadow-sm border border-gray-100 text-center">
+      <h2 class="text-2xl font-black mb-2">Volunteer & Captain sign-in</h2>
+      <p class="text-sm text-gray-600 mb-5">Sign in with the Google account you used when you signed up to volunteer. Captains see and update their team's tasks here.</p>
+      <div id="gsi" class="flex justify-center mb-4"></div>
+      <p id="signin-error" class="hidden text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3 text-left"></p>
+      <p class="text-xs text-gray-500 mt-4">Signed up with an email that isn't a Google account? Ask an organizer to link your Google email.</p>
+    </section>
+
+    <section id="loading" class="flex justify-center p-10"><div class="loader"></div></section>
+
+    <!-- Signed in -->
+    <section id="app" class="hidden">
+      <div class="mb-4">
+        <h2 class="text-2xl font-black" id="hello"></h2>
+        <div id="my-roles" class="flex flex-wrap gap-2 mt-2"></div>
+      </div>
+
+      <div id="instructions" class="hidden mb-4 space-y-2"></div>
+
+      <nav class="sticky top-14 z-30 bg-[#f0f0f0] py-2 mb-3">
+        <div class="grid grid-cols-3 gap-1 bg-white rounded-xl p-1 border border-gray-200 text-sm font-bold">
+          <button data-action="tab" data-tab="tasks" class="tab-btn py-2 rounded-lg">Tasks</button>
+          <button data-action="tab" data-tab="roster" class="tab-btn py-2 rounded-lg">Roster</button>
+          <button data-action="tab" data-tab="me" class="tab-btn py-2 rounded-lg">My info</button>
+        </div>
+      </nav>
+
+      <div id="tab-tasks">
+        <label class="flex items-center gap-2 text-sm font-bold text-gray-700 mb-3">
+          <input type="checkbox" id="hide-done" class="w-4 h-4"> Hide done
+          <span id="live-dot" title="Live updates" class="ml-auto inline-block w-2 h-2 rounded-full bg-gray-300"></span>
+          <span class="text-xs font-normal text-gray-500" id="updated-at"></span>
+        </label>
+        <div id="task-roles" class="space-y-5"></div>
+      </div>
+
+      <div id="tab-roster" class="hidden">
+        <div id="roster" class="space-y-4"></div>
+      </div>
+
+      <div id="tab-me" class="hidden">
+        <form id="me-form" class="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm space-y-3">
+          <div class="grid grid-cols-2 gap-3">
+            <label class="block text-xs font-bold text-gray-600">First name
+              <input id="me-first" required maxlength="40" autocomplete="given-name" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-3 text-base font-normal">
+            </label>
+            <label class="block text-xs font-bold text-gray-600">Last name
+              <input id="me-last" maxlength="60" autocomplete="family-name" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-3 text-base font-normal">
+            </label>
+          </div>
+          <label class="block text-xs font-bold text-gray-600">Contact email
+            <input id="me-email" type="email" required autocomplete="email" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-3 text-base font-normal">
+          </label>
+          <label class="block text-xs font-bold text-gray-600">Phone
+            <input id="me-phone" type="tel" autocomplete="tel" class="mt-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-3 text-base font-normal">
+          </label>
+          <p class="text-xs text-gray-500">You sign in as <span id="me-signin" class="font-bold"></span>. Changing your contact email does not change how you sign in. Your details are encrypted and only shown to you, your team captain, and organizers.</p>
+          <p id="me-error" class="hidden text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-2"></p>
+          <button type="submit" id="me-save" class="w-full bg-[#1e1e1e] text-white font-bold py-3 rounded-xl">Save my info</button>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-50 px-4 py-3 rounded-xl shadow-lg text-sm font-bold text-white max-w-[90vw]"></div>
+
+  <script>
+    const SESSION_KEY = 'devfest_session';
+    const STATUS = {
+      todo: { label: 'To do', on: 'bg-gray-700 text-white border-gray-700', badge: 'bg-gray-100 text-gray-700' },
+      in_progress: { label: 'Doing', on: 'bg-amber-500 text-white border-amber-500', badge: 'bg-amber-100 text-amber-800' },
+      done: { label: 'Done', on: 'bg-emerald-600 text-white border-emerald-600', badge: 'bg-emerald-100 text-emerald-800' },
+      blocked: { label: 'Blocked', on: 'bg-red-600 text-white border-red-600', badge: 'bg-red-100 text-red-800' }
+    };
+
+    let me = null;
+    let taskData = null;
+    let tab = 'tasks';
+    const drafts = {};          // taskId -> unsent note text
+    const openNotes = new Set(); // taskIds with all notes expanded
+    let pendingRender = false;
+
+    function esc(v) {
+      return String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+    function fmtTime(t) {
+      if (!t) return '';
+      const [h, m] = t.split(':').map(Number);
+      return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+    }
+    function timeWindow(t) {
+      if (t.startTime && t.endTime) return `${fmtTime(t.startTime)}–${fmtTime(t.endTime)}`;
+      return fmtTime(t.startTime || t.endTime);
+    }
+    function icons() { if (window.lucide) lucide.createIcons(); }
+    let toastTimer;
+    function toast(msg, ok = true) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.className = `fixed bottom-4 left-1/2 -translate-x-1/2 z-50 px-4 py-3 rounded-xl shadow-lg text-sm font-bold text-white max-w-[90vw] ${ok ? 'bg-[#1e1e1e]' : 'bg-red-600'}`;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => el.classList.add('hidden'), 3000);
+    }
+    function show(id, on) { document.getElementById(id).classList.toggle('hidden', !on); }
+
+    async function api(path, { method = 'GET', body } = {}) {
+      const res = await fetch(path, {
+        method,
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionStorage.getItem(SESSION_KEY) },
+        body: body !== undefined ? JSON.stringify(body) : undefined
+      });
+      let data = null;
+      try { data = await res.json(); } catch (e) {}
+      if (res.status === 401) { signOut('Your session expired. Please sign in again.'); throw new Error('Signed out'); }
+      if (!res.ok) throw new Error((data && data.error) || `Request failed (${res.status})`);
+      return data;
+    }
+
+    // ---------- sign in ----------
+    async function initGoogle() {
+      const box = document.getElementById('gsi');
+      try {
+        const cfg = await (await fetch('/api/auth/config')).json();
+        if (!cfg.clientId) {
+          box.innerHTML = '<p class="text-xs text-red-600 font-bold">Google sign-in is not configured.</p>';
+          return;
+        }
+        const render = () => {
+          google.accounts.id.initialize({ client_id: cfg.clientId, callback: onGoogleCredential });
+          google.accounts.id.renderButton(box, { theme: 'outline', size: 'large', width: 280, text: 'signin_with' });
+        };
+        if (window.google && google.accounts) render();
+        else window.addEventListener('load', () => window.google && render());
+      } catch (e) {
+        box.innerHTML = '<p class="text-xs text-red-600 font-bold">Could not load sign-in. Check your connection and reload.</p>';
+      }
+    }
+
+    async function onGoogleCredential(response) {
+      const err = document.getElementById('signin-error');
+      err.classList.add('hidden');
+      try {
+        const res = await fetch('/api/auth/google', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ credential: response.credential })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.token) throw new Error(data.error || 'Sign-in failed');
+        sessionStorage.setItem(SESSION_KEY, data.token);
+        boot();
+      } catch (e) {
+        err.textContent = e.message;
+        err.classList.remove('hidden');
+      }
+    }
+
+    function signOut(message) {
+      sessionStorage.removeItem(SESSION_KEY);
+      show('app', false);
+      show('loading', false);
+      show('signout-btn', false);
+      show('signin', true);
+      if (message) {
+        const err = document.getElementById('signin-error');
+        err.textContent = message;
+        err.classList.remove('hidden');
+      }
+      initGoogle();
+    }
+
+    // ---------- load ----------
+    async function boot() {
+      if (!sessionStorage.getItem(SESSION_KEY)) { show('loading', false); signOut(); return; }
+      show('signin', false);
+      show('loading', true);
+      try {
+        me = await api('/api/team/me');
+      } catch (e) {
+        if (e.message !== 'Signed out') signOut(e.message);
+        return;
+      }
+      show('loading', false);
+      show('app', true);
+      show('signout-btn', true);
+      renderMe();
+      setTab(tab);
+      loadTasks();
+      loadRoster();
+      connectLive();
+    }
+
+    function renderMe() {
+      const name = me.profile ? me.profile.firstName : me.signedInAs;
+      document.getElementById('hello').textContent = `Hi ${name}!`;
+      document.getElementById('my-roles').innerHTML = me.assignments.map(a =>
+        `<span class="inline-flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-full ${a.isCaptain ? 'bg-yellow-100 text-yellow-900 border border-yellow-300' : 'bg-white text-gray-700 border border-gray-200'}">${a.isCaptain ? '<i data-lucide="star" class="w-3 h-3 fill-current"></i> Captain · ' : ''}${esc(a.roleTitle)}</span>`).join('')
+        + (me.isAdmin ? '<a href="/admin" class="text-xs font-bold px-3 py-1.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200">Organizer · Admin panel</a>' : '');
+
+      const blocks = [];
+      if (me.instructions.captain) blocks.push(['Captain note from the organizers', me.instructions.captain, 'purple']);
+      for (const a of me.assignments) {
+        if (me.instructions.roles[a.roleId]) blocks.push([`${a.roleTitle} update`, me.instructions.roles[a.roleId], 'blue']);
+      }
+      if (me.instructions.global) blocks.push(['Organizer instructions', me.instructions.global, 'gray']);
+      const box = document.getElementById('instructions');
+      box.innerHTML = blocks.map(([title, text, color]) => `<div class="bg-${color}-50 border border-${color}-200 rounded-xl p-3">
+          <div class="text-xs font-black uppercase tracking-wide text-${color}-800 mb-1">${esc(title)}</div>
+          <div class="text-sm text-gray-800 whitespace-pre-wrap">${esc(text)}</div></div>`).join('');
+      box.classList.toggle('hidden', !blocks.length);
+
+      if (me.profile) {
+        document.getElementById('me-first').value = me.profile.firstName || '';
+        document.getElementById('me-last').value = me.profile.lastName || '';
+        document.getElementById('me-email').value = me.profile.email || '';
+        document.getElementById('me-phone').value = me.profile.phone || '';
+      }
+      document.getElementById('me-signin').textContent = me.signedInAs;
+      show('me-form', !!me.profile);
+      icons();
+    }
+
+    function setTab(name) {
+      tab = name;
+      for (const t of ['tasks', 'roster', 'me']) show('tab-' + t, t === name);
+      document.querySelectorAll('.tab-btn').forEach(b => {
+        b.className = `tab-btn py-2 rounded-lg ${b.dataset.tab === name ? 'bg-[#1e1e1e] text-white' : 'text-gray-600'}`;
+      });
+    }
+
+    // ---------- tasks ----------
+    async function loadTasks() {
+      try {
+        taskData = await api('/api/team/tasks');
+        document.getElementById('updated-at').textContent = 'Updated ' + new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        renderTasks();
+      } catch (e) {
+        if (e.message !== 'Signed out') toast(e.message, false);
+      }
+    }
+
+    function noteInputFocused() {
+      const a = document.activeElement;
+      return a && a.classList && a.classList.contains('note-input');
+    }
+
+    function renderTasks() {
+      // Never re-render under someone's thumb while they type a note.
+      if (noteInputFocused()) { pendingRender = true; return; }
+      pendingRender = false;
+      const hideDone = document.getElementById('hide-done').checked;
+      const html = taskData.roles.map(role => {
+        const p = role.progress;
+        const pct = n => p.total ? (100 * n / p.total).toFixed(1) + '%' : '0%';
+        const tasks = role.tasks.filter(t => !(hideDone && t.status === 'done'));
+        const cards = tasks.map(t => taskCard(t, role.canEdit)).join('');
+        return `<section>
+          <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-3">
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <h3 class="text-lg font-black leading-tight">${esc(role.title)}</h3>
+                <div class="text-xs text-gray-500 mt-0.5">${role.channel ? `Radio Ch ${role.channel} · ` : ''}Captain${role.captains.length === 1 ? '' : 's'}: ${role.captains.length ? esc(role.captains.join(', ')) : '<span class="text-red-600 font-bold">none yet</span>'}</div>
+              </div>
+              <div class="text-right shrink-0"><div class="text-xl font-black leading-none">${p.done}/${p.total}</div><div class="text-[11px] text-gray-500">done</div></div>
+            </div>
+            <div class="h-2 mt-3 rounded-full bg-gray-100 overflow-hidden flex">
+              <div class="bg-emerald-500" style="width:${pct(p.done)}"></div><div class="bg-amber-400" style="width:${pct(p.in_progress)}"></div><div class="bg-red-500" style="width:${pct(p.blocked)}"></div>
+            </div>
+            ${p.blocked ? `<div class="mt-2 text-xs font-bold text-red-700">${p.blocked} blocked</div>` : ''}
+            ${role.canEdit ? '' : '<div class="mt-2 text-xs text-gray-500">Only your team captain can update these tasks.</div>'}
+          </div>
+          <div class="space-y-3">${cards || `<p class="text-sm text-gray-500 text-center py-4">${role.tasks.length ? 'All done here. Nice work!' : 'No tasks yet. Check back soon.'}</p>`}</div>
+        </section>`;
+      }).join('');
+      document.getElementById('task-roles').innerHTML = html || '<p class="text-sm text-gray-500 text-center py-6">You are not on a team yet.</p>';
+      // Restore unsent notes.
+      document.querySelectorAll('.note-input').forEach(el => { if (drafts[el.dataset.id]) el.value = drafts[el.dataset.id]; });
+      icons();
+    }
+
+    function taskCard(t, canEdit) {
+      const st = STATUS[t.status] || STATUS.todo;
+      const notes = t.notes || [];
+      const shown = openNotes.has(t.id) ? notes : notes.slice(-2);
+      const statusButtons = canEdit
+        ? `<div class="grid grid-cols-4 gap-1.5 mt-3">${Object.entries(STATUS).map(([k, v]) =>
+            `<button data-action="set-status" data-id="${esc(t.id)}" data-status="${k}" class="py-2.5 rounded-lg border text-xs font-bold ${k === t.status ? v.on : 'bg-white text-gray-700 border-gray-200'}">${v.label}</button>`).join('')}</div>`
+        : `<span class="inline-block mt-2 text-xs font-bold px-2 py-1 rounded ${st.badge}">${st.label}</span>`;
+      return `<article class="bg-white rounded-2xl border ${t.status === 'blocked' ? 'border-red-300 ring-1 ring-red-200' : 'border-gray-100'} shadow-sm p-4 ${t.status === 'done' ? 'opacity-70' : ''}">
+        <div class="flex items-start justify-between gap-2">
+          <h4 class="font-bold text-base leading-snug ${t.status === 'done' ? 'line-through text-gray-500' : ''}">${esc(t.title)}</h4>
+          ${t.priority === 'high' ? '<span class="shrink-0 text-[10px] font-black uppercase bg-red-600 text-white px-1.5 py-0.5 rounded">High</span>' : ''}
+        </div>
+        <div class="text-xs text-gray-600 mt-1 flex flex-wrap gap-x-3 gap-y-1">
+          ${timeWindow(t) ? `<span class="inline-flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i>${esc(timeWindow(t))}</span>` : ''}
+          ${t.location ? `<span class="inline-flex items-center gap-1"><i data-lucide="map-pin" class="w-3 h-3"></i>${esc(t.location)}</span>` : ''}
+          ${t.assignee ? `<span class="inline-flex items-center gap-1 ${t.assignee.mine ? 'font-bold text-blue-700' : ''}"><i data-lucide="user" class="w-3 h-3"></i>${t.assignee.mine ? 'Assigned to you' : esc(t.assignee.name)}</span>` : ''}
+        </div>
+        ${t.details ? `<p class="text-sm text-gray-700 mt-2 whitespace-pre-wrap">${esc(t.details)}</p>` : ''}
+        ${statusButtons}
+        ${notes.length ? `<ul class="mt-3 space-y-1.5">${notes.length > shown.length ? `<li><button data-action="all-notes" data-id="${esc(t.id)}" class="text-xs font-bold text-blue-600">Show all ${notes.length} notes</button></li>` : ''}${shown.map(n =>
+          `<li class="text-sm bg-gray-50 rounded-lg px-3 py-2"><span class="font-bold">${esc(n.by)}</span> <span class="text-xs text-gray-400">${esc(new Date(n.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }))}</span><div class="whitespace-pre-wrap">${esc(n.text)}</div></li>`).join('')}</ul>` : ''}
+        ${canEdit ? `<div class="mt-3 flex gap-2">
+          <textarea data-id="${esc(t.id)}" rows="1" maxlength="1000" placeholder="Add a note…" class="note-input flex-1 min-w-0 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-base"></textarea>
+          <button data-action="send-note" data-id="${esc(t.id)}" class="shrink-0 bg-[#1e1e1e] text-white rounded-lg px-4 text-sm font-bold">Send</button>
+        </div>` : ''}
+      </article>`;
+    }
+
+    function findTask(id) {
+      for (const r of taskData.roles) {
+        const t = r.tasks.find(x => x.id === id);
+        if (t) return { role: r, task: t };
+      }
+      return null;
+    }
+
+    async function updateTask(id, body, btn) {
+      if (btn) btn.disabled = true;
+      try {
+        const r = await api('/api/team/tasks/' + encodeURIComponent(id), { method: 'PATCH', body });
+        const found = findTask(id);
+        if (found) {
+          Object.assign(found.task, r.task);
+          const p = { total: found.role.tasks.length, todo: 0, in_progress: 0, done: 0, blocked: 0 };
+          for (const t of found.role.tasks) p[t.status]++;
+          found.role.progress = p;
+        }
+        renderTasks();
+        return true;
+      } catch (e) {
+        if (e.message !== 'Signed out') toast(e.message, false);
+        if (btn) btn.disabled = false;
+        return false;
+      }
+    }
+
+    // ---------- roster ----------
+    async function loadRoster() {
+      try {
+        const data = await api('/api/team/roster');
+        document.getElementById('roster').innerHTML = data.roles.map(r => `<section class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+          <h3 class="font-black text-lg">${esc(r.roleTitle)}${r.iCaptain ? ' <span class="text-xs font-bold text-yellow-800 bg-yellow-100 px-2 py-0.5 rounded-full align-middle">You captain this team</span>' : ''}</h3>
+          <div class="text-xs text-gray-500 mb-2">Captain${r.captains.length === 1 ? '' : 's'}: ${r.captains.length ? esc(r.captains.join(', ')) : 'none yet'}</div>
+          <ul class="divide-y divide-gray-100">${r.members.map(m => `<li class="py-2">
+            <div class="flex items-center gap-2 font-bold">${m.isCaptain ? '<i data-lucide="star" class="w-4 h-4 text-yellow-500 fill-current"></i>' : ''}${esc(m.contact ? [m.contact.firstName, m.contact.lastName].filter(Boolean).join(' ') : m.displayName)}${m.isMe ? ' <span class="text-xs font-bold text-blue-700">(you)</span>' : ''}</div>
+            ${m.contact ? `<div class="flex flex-wrap gap-2 mt-1">
+              ${m.contact.phone ? `<a href="tel:${esc(m.contact.phone)}" class="inline-flex items-center gap-1 text-sm bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg px-3 py-1.5"><i data-lucide="phone" class="w-4 h-4"></i>${esc(m.contact.phone)}</a>` : ''}
+              ${m.contact.email ? `<a href="mailto:${esc(m.contact.email)}" class="inline-flex items-center gap-1 text-sm bg-blue-50 text-blue-800 border border-blue-200 rounded-lg px-3 py-1.5 break-all"><i data-lucide="mail" class="w-4 h-4 shrink-0"></i>${esc(m.contact.email)}</a>` : ''}
+            </div>` : ''}
+          </li>`).join('') || '<li class="py-2 text-sm text-gray-400">No volunteers yet.</li>'}</ul>
+        </section>`).join('');
+        icons();
+      } catch (e) {
+        if (e.message !== 'Signed out') document.getElementById('roster').innerHTML = `<p class="text-sm text-red-600">${esc(e.message)}</p>`;
+      }
+    }
+
+    // ---------- live ----------
+    let es;
+    function connectLive() {
+      if (es) return;
+      const dot = document.getElementById('live-dot');
+      let timer;
+      es = new EventSource('/api/stream');
+      es.addEventListener('connected', () => { dot.className = 'ml-auto inline-block w-2 h-2 rounded-full bg-emerald-500'; });
+      es.onerror = () => { dot.className = 'ml-auto inline-block w-2 h-2 rounded-full bg-gray-300'; };
+      es.addEventListener('tasks_changed', () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => { loadTasks(); loadRoster(); }, 400);
+      });
+      setInterval(() => { if (!document.hidden) loadTasks(); }, 30000);
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) { loadTasks(); loadRoster(); } });
+    }
+
+    // ---------- events ----------
+    const actions = {
+      'sign-out': () => signOut(),
+      'tab': el => { setTab(el.dataset.tab); window.scrollTo({ top: 0 }); },
+      'set-status': el => {
+        const found = findTask(el.dataset.id);
+        if (found && found.task.status === el.dataset.status) return;
+        if (el.dataset.status === 'blocked' && found && !found.task.notes.length && !(drafts[el.dataset.id] || '').trim()) {
+          toast('Marked blocked. Add a note so the organizers know why.');
+        }
+        updateTask(el.dataset.id, { status: el.dataset.status }, el);
+      },
+      'send-note': async el => {
+        const id = el.dataset.id;
+        const text = (drafts[id] || '').trim();
+        if (!text) return toast('Type a note first', false);
+        delete drafts[id];
+        // Blur first: dismisses the phone keyboard and lets the list re-render
+        // (renders are held while a note box has focus).
+        if (noteInputFocused()) document.activeElement.blur();
+        if (await updateTask(id, { note: text }, el)) {
+          toast('Note sent');
+        } else {
+          drafts[id] = text; // keep the text so it can be retried
+          renderTasks();
+        }
+      },
+      'all-notes': el => { openNotes.add(el.dataset.id); renderTasks(); }
+    };
+    document.addEventListener('click', e => {
+      const el = e.target.closest('[data-action]');
+      if (!el) return;
+      const fn = actions[el.dataset.action];
+      if (fn) { e.preventDefault(); fn(el); }
+    });
+    document.addEventListener('input', e => {
+      if (e.target.classList.contains('note-input')) drafts[e.target.dataset.id] = e.target.value;
+    });
+    document.addEventListener('focusout', e => {
+      if (e.target.classList && e.target.classList.contains('note-input') && pendingRender) {
+        // Let a tap on "Send" land before the list re-renders.
+        setTimeout(() => { if (pendingRender) renderTasks(); }, 250);
+      }
+    });
+    document.getElementById('hide-done').addEventListener('change', renderTasks);
+
+    document.getElementById('me-form').addEventListener('submit', async e => {
+      e.preventDefault();
+      const err = document.getElementById('me-error');
+      err.classList.add('hidden');
+      const btn = document.getElementById('me-save');
+      btn.disabled = true;
+      try {
+        const r = await api('/api/team/me', {
+          method: 'PATCH',
+          body: {
+            firstName: document.getElementById('me-first').value,
+            lastName: document.getElementById('me-last').value,
+            email: document.getElementById('me-email').value,
+            phone: document.getElementById('me-phone').value
+          }
+        });
+        me.profile = r.profile;
+        renderMe();
+        loadRoster();
+        toast('Saved');
+      } catch (ex) {
+        err.textContent = ex.message;
+        err.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    icons();
+    boot();
+  </script>
+</body>
+</html>
